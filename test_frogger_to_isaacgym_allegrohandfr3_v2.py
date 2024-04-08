@@ -450,8 +450,9 @@ def R_p_to_T(R: np.ndarray, p: np.ndarray) -> np.ndarray:
 assert model.R_cf_O.shape == (4, 3, 3)
 for i in range(model.R_cf_O.shape[0]):
     # add_transform_traces(fig=fig, T=R_p_to_T(R=model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
-    add_transform_traces(fig=fig, T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
-
+    # add_transform_traces(fig=fig, T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
+    # add_transform_traces(fig=fig, T=X_W_O @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
+    add_transform_traces(fig=fig, T=R_p_to_T(R=X_W_O[:3, :3] @ model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
 fig.show()
 
 # %%
