@@ -132,6 +132,19 @@ mesh_object = create_frogger_mesh_object(mesh=mesh, obj_name=args.obj_name, X_W_
 
 # %%
 @localscope.mfc
+def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
+    return FR3AlgrZed2iModelConfig(
+        obj=mesh_object,
+        ns=4,
+        mu=0.7,
+        d_min=0.001,
+        d_pen=0.005,
+        viz=viz,
+    ).create()
+
+
+# %%
+@localscope.mfc
 def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
     # loading model
     model = create_model(mesh_object=mesh_object, viz=False)
@@ -163,19 +176,6 @@ def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
 
 # %%
 q_array = zup_mesh_to_q_array(mesh_object=mesh_object, num_grasps=args.num_grasps)
-
-
-# %%
-@localscope.mfc
-def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
-    return FR3AlgrZed2iModelConfig(
-        obj=mesh_object,
-        ns=4,
-        mu=0.7,
-        d_min=0.001,
-        d_pen=0.005,
-        viz=viz,
-    ).create()
 
 
 # %%
@@ -338,7 +338,11 @@ fig.show()
 # %%
 @localscope.mfc
 def q_array_to_hand_config_dict(
-    q_array: np.ndarray, X_W_O: np.ndarray, X_O_Oy: np.ndarray
+    q_array: np.ndarray,
+    chain: pk.Chain,
+    X_W_O: np.ndarray,
+    X_O_Oy: np.ndarray,
+    wrist_body_name: str,
 ) -> dict:
     # W = world frame z-up
     # O = object frame z-up
@@ -355,7 +359,7 @@ def q_array_to_hand_config_dict(
     X_W_H_array, joint_angles_array = [], []
     for i in range(B):
         X_W_H, joint_angles = q_to_T_W_H_and_joint_angles(
-            q=q_array[i], chain=chain, wrist_body_name=args.wrist_body_name
+            q=q_array[i], chain=chain, wrist_body_name=wrist_body_name
         )
         assert X_W_H.shape == (4, 4)
         assert joint_angles.shape == (16,)
@@ -413,7 +417,11 @@ model.n_O, model.R_cf_O
 
 # %%
 hand_config_dict = q_array_to_hand_config_dict(
-    q_array=q_array, X_W_O=X_W_O, X_O_Oy=X_O_Oy
+    q_array=q_array,
+    chain=chain,
+    X_W_O=X_W_O,
+    X_O_Oy=X_O_Oy,
+    wrist_body_name=args.wrist_body_name,
 )
 
 # %%
