@@ -47,6 +47,14 @@ class Args:
 
 
 args = Args()
+# args = Args(
+#     obj_filepath=pathlib.Path(
+#         ROOT + "/data/001_chips_can/001_chips_can_clean.obj"
+#     ),
+#     obj_scale=1.0,
+#     obj_name="001_chips_can",
+#     obj_is_yup=False,
+# )
 
 
 # %%
@@ -74,9 +82,6 @@ def create_mesh(obj_filepath: pathlib.Path, obj_scale: float) -> trimesh.Trimesh
     mesh.apply_transform(trimesh.transformations.scale_matrix(obj_scale))
     return mesh
 
-
-# %%
-X_O_Oy = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
 
 # %%
 mesh = create_mesh(obj_filepath=args.obj_filepath, obj_scale=args.obj_scale)
@@ -246,7 +251,7 @@ def transform_points(points: np.ndarray, T: np.ndarray) -> np.ndarray:
 vertices_O = mesh.vertices
 vertices_W = transform_points(points=vertices_O, T=X_W_O)
 fig = go.Figure()
-fig.update_layout(scene=dict(aspectmode="data"))
+fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="W frame"))
 fig.add_trace(
     go.Mesh3d(
         x=vertices_W[:, 0],
@@ -300,12 +305,14 @@ add_transform_traces(fig=fig, T=X_W_Wrist, name="T_Wrist")
 fig.show()
 
 # %%
+if args.obj_is_yup:
+    X_O_Oy = np.eye(4)
+else:
+    X_O_Oy = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
+
 model = create_model(mesh_object=mesh_object, viz=False)
 X_O_Wrist = np.linalg.inv(X_W_O) @ X_W_Wrist
 X_Oy_Wrist = np.linalg.inv(X_O_Oy) @ X_O_Wrist
-
-# %%
-fig.show()
 
 # %%
 link_poses_hand_frame = chain.forward_kinematics(q_array[IDX])
@@ -325,12 +332,8 @@ fig.show()
 
 
 # %%
-X_O_Oy
-
-
 # %%
-# %%
-def q_array_to_grasp_config_dict(
+def q_array_to_hand_config_dict(
     q_array: np.ndarray, X_W_O: np.ndarray, X_O_Oy: np.ndarray
 ) -> dict:
     # W = world frame z-up
@@ -338,7 +341,7 @@ def q_array_to_grasp_config_dict(
     # Oy = object frame y-up
     # H = hand/frame z along finger, x away from palm
     # Assumes q in W frame
-    # Assumes grasp_config_dict in Oy frame
+    # Assumes hand_config_dict in Oy frame
 
     B = q_array.shape[0]
     assert q_array.shape == (B, 23)
@@ -347,9 +350,14 @@ def q_array_to_grasp_config_dict(
 
     X_W_H_array, joint_angles_array = [], []
     for i in range(B):
-        T_H, joint_angles = q_to_T_and_joint_angles(q_array[i])
-        X_W_H_array.append(T_H)
+        X_W_H, joint_angles = q_to_T_W_H_and_joint_angles(
+            q=q_array[i], chain=chain, wrist_body_name=args.wrist_body_name
+        )
+        assert X_W_H.shape == (4, 4)
+        assert joint_angles.shape == (16,)
+        X_W_H_array.append(X_W_H)
         joint_angles_array.append(joint_angles)
+
     X_W_H_array = np.array(X_W_H_array)
     joint_angles_array = np.array(joint_angles_array)
     assert X_W_H_array.shape == (B, 4, 4)
@@ -367,8 +375,7 @@ def q_array_to_grasp_config_dict(
     return {
         "trans": X_Oy_H_array[:, :3, 3],
         "rot": X_Oy_H_array[:, :3, :3],
-        "joint_angles": joint_angles,
-        "grasp_orientations": grasp_orientations_Oy,
+        "joint_angles": joint_angles_array,
     }
 
 
@@ -450,9 +457,9 @@ def R_p_to_T(R: np.ndarray, p: np.ndarray) -> np.ndarray:
 assert model.R_cf_O.shape == (4, 3, 3)
 for i in range(model.R_cf_O.shape[0]):
     # add_transform_traces(fig=fig, T=R_p_to_T(R=model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
-    # add_transform_traces(fig=fig, T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
+    add_transform_traces(fig=fig, T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
     # add_transform_traces(fig=fig, T=X_W_O @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
-    add_transform_traces(fig=fig, T=R_p_to_T(R=X_W_O[:3, :3] @ model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
+    # add_transform_traces(fig=fig, T=R_p_to_T(R=X_W_O[:3, :3] @ model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
 fig.show()
 
 # %%
@@ -462,3 +469,63 @@ model.n_O, model.R_cf_O
 
 # %%
 visualize_q_with_pydrake(mesh_object=mesh_object, q=q_array[IDX])
+
+# %%
+X_W_O[:3, :3]
+# %%
+print(f"model.R_cf_O = \n{model.R_cf_O}")
+
+# %%
+hand_config_dict = q_array_to_hand_config_dict(
+    q_array=q_array, X_W_O=X_W_O, X_O_Oy=X_O_Oy
+)
+
+# %%
+output_folder = pathlib.Path(".") / "output_hand_config_dicts"
+output_folder.mkdir(exist_ok=True)
+np.save(
+    # Convert 0.0915 to 0_0915 (always 4 decimal places)
+    output_folder / f"{args.obj_name}_{args.obj_scale:.4f}".replace(".", "_"),
+    hand_config_dict,
+    allow_pickle=True,
+)
+
+# %%
+hand_config_dict['joint_angles'].shape
+
+# %%
+hand_config_dict['trans']
+
+# %%
+visualize_q_with_pydrake(mesh_object=mesh_object, q=q_array[2])
+
+# %%
+X_Oy_O = np.linalg.inv(X_O_Oy)
+X_O_W = np.linalg.inv(X_W_O)
+
+fig = go.Figure()
+# Set title to be Oy frame
+fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="Oy frame"))
+vertices_Oy = transform_points(points=vertices_O, T=X_Oy_O)
+fig = go.Figure()
+fig.add_trace(
+    go.Mesh3d(
+        x=vertices_Oy[:, 0],
+        y=vertices_Oy[:, 1],
+        z=vertices_Oy[:, 2],
+        i=mesh.faces[:, 0],
+        j=mesh.faces[:, 1],
+        k=mesh.faces[:, 2],
+        color="lightpink",
+        opacity=0.50,
+    )
+)
+add_transform_traces(fig=fig, T=np.eye(4), name="T_Oy")
+fig.show()
+# %%
+add_transform_traces(fig=fig, T=X_Oy_O @ X_O_W @ X_W_Wrist, name="T_Wrist")
+for i, X_W_fingertip in enumerate(X_W_fingertip_list):
+    add_transform_traces(fig=fig, T=X_Oy_O @ X_O_W @ X_W_fingertip, name=f"T_fingertip {i}")
+fig.show()
+
+# %%
