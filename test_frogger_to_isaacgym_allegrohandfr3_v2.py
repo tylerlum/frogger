@@ -10,13 +10,14 @@ import torch
 
 from frogger import ROOT
 from frogger.objects import MeshObjectConfig, MeshObject
-from frogger.robots.robots import AlgrModelConfig, FR3AlgrZed2iModelConfig
-from frogger.sampling import HeuristicAlgrICSampler, HeuristicFR3AlgrICSampler
+from frogger.robots.robots import FR3AlgrZed2iModelConfig
+from frogger.sampling import HeuristicFR3AlgrICSampler
 from frogger.solvers import FroggerConfig
 from frogger.robots.robot_core import RobotModel
 import plotly.graph_objects as go
 import pathlib
 from dataclasses import dataclass
+from localscope import localscope
 
 
 # %%
@@ -58,25 +59,7 @@ args = Args()
 
 
 # %%
-def plot_mesh(mesh: trimesh.Trimesh) -> None:
-    fig = go.Figure(
-        data=[
-            go.Mesh3d(
-                x=mesh.vertices[:, 0],
-                y=mesh.vertices[:, 1],
-                z=mesh.vertices[:, 2],
-                i=mesh.faces[:, 0],
-                j=mesh.faces[:, 1],
-                k=mesh.faces[:, 2],
-                color="lightpink",
-                opacity=0.50,
-            )
-        ]
-    )
-    fig.show()
-
-
-# %%
+@localscope.mfc
 def create_mesh(obj_filepath: pathlib.Path, obj_scale: float) -> trimesh.Trimesh:
     mesh = trimesh.load(obj_filepath)
     mesh.apply_transform(trimesh.transformations.scale_matrix(obj_scale))
@@ -87,13 +70,31 @@ def create_mesh(obj_filepath: pathlib.Path, obj_scale: float) -> trimesh.Trimesh
 mesh = create_mesh(obj_filepath=args.obj_filepath, obj_scale=args.obj_scale)
 
 # %%
-plot_mesh(mesh)
+fig = go.Figure(
+    data=[
+        go.Mesh3d(
+            x=mesh.vertices[:, 0],
+            y=mesh.vertices[:, 1],
+            z=mesh.vertices[:, 2],
+            i=mesh.faces[:, 0],
+            j=mesh.faces[:, 1],
+            k=mesh.faces[:, 2],
+            color="lightpink",
+            opacity=0.50,
+        )
+    ]
+)
+fig.show()
+del fig
 
 
 # %%
+@localscope.mfc
 def compute_X_W_O(mesh: trimesh.Trimesh, obj_is_yup: bool) -> np.ndarray:
     bounds = mesh.bounds
     X_W_O = np.eye(4)
+    # # 0.7 is to keep object away from robot base
+
     if obj_is_yup:
         min_y_O = bounds[0, -2]
         X_W_O[:3, 3] = np.array([0.7, 0.0, -min_y_O])
@@ -111,7 +112,8 @@ def compute_X_W_O(mesh: trimesh.Trimesh, obj_is_yup: bool) -> np.ndarray:
 X_W_O = compute_X_W_O(mesh=mesh, obj_is_yup=args.obj_is_yup)
 
 
-def create_mesh_object(
+@localscope.mfc
+def create_frogger_mesh_object(
     mesh: trimesh.Trimesh, obj_name: str, X_W_O: np.ndarray
 ) -> MeshObject:
     return MeshObjectConfig(
@@ -125,22 +127,11 @@ def create_mesh_object(
     ).create()
 
 
-mesh_object = create_mesh_object(mesh=mesh, obj_name=args.obj_name, X_W_O=X_W_O)
+mesh_object = create_frogger_mesh_object(mesh=mesh, obj_name=args.obj_name, X_W_O=X_W_O)
 
 
 # %%
-def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
-    return FR3AlgrZed2iModelConfig(
-        obj=mesh_object,
-        ns=4,
-        mu=0.7,
-        d_min=0.001,
-        d_pen=0.005,
-        viz=viz,
-    ).create()
-
-
-# %%
+@localscope.mfc
 def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
     # loading model
     model = create_model(mesh_object=mesh_object, viz=False)
@@ -159,7 +150,6 @@ def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
         maxtime=60.0,
     ).create()
 
-    print("Model compiled! Generating grasp...")
     q_array = []
     for _ in tqdm(range(num_grasps)):
         q_star = frogger.generate_grasp()
@@ -176,7 +166,21 @@ q_array = zup_mesh_to_q_array(mesh_object=mesh_object, num_grasps=args.num_grasp
 
 
 # %%
-def visualize_q_with_pydrake(mesh_object: MeshObject, q: np.ndarray) -> None:
+@localscope.mfc
+def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
+    return FR3AlgrZed2iModelConfig(
+        obj=mesh_object,
+        ns=4,
+        mu=0.7,
+        d_min=0.001,
+        d_pen=0.005,
+        viz=viz,
+    ).create()
+
+
+# %%
+@localscope.mfc
+def visualize_q_with_pydrake_blocking(mesh_object: MeshObject, q: np.ndarray) -> None:
     assert q.shape == (23,)
     # loading model
     model = create_model(mesh_object=mesh_object, viz=True)
@@ -184,11 +188,7 @@ def visualize_q_with_pydrake(mesh_object: MeshObject, q: np.ndarray) -> None:
 
 
 # %%
-IDX = 1
-# visualize_q_with_pydrake(mesh_object=mesh_object, q=q_array[IDX])
-
-
-# %%
+@localscope.mfc
 def add_transform_traces(
     fig: go.Figure, T: np.ndarray, name: str, length: float = 0.02
 ) -> None:
@@ -236,6 +236,7 @@ def add_transform_traces(
 
 
 # %%
+@localscope.mfc
 def transform_points(points: np.ndarray, T: np.ndarray) -> np.ndarray:
     B = points.shape[0]
     assert points.shape == (B, 3)
@@ -248,6 +249,37 @@ def transform_points(points: np.ndarray, T: np.ndarray) -> np.ndarray:
     return points
 
 
+# %%
+@localscope.mfc
+def get_kinematic_chain(model_path: pathlib.Path) -> pk.Chain:
+    with open(model_path) as f:
+        chain = pk.build_chain_from_urdf(f.read())
+        chain = chain.to(device="cuda", dtype=torch.float32)
+    return chain
+
+
+# %%
+@localscope.mfc
+def q_to_T_W_H_and_joint_angles(
+    q: np.ndarray, chain: pk.Chain, wrist_body_name: str
+) -> Tuple[np.ndarray, np.ndarray]:
+    assert q.shape == (23,)
+    hand_joint_angles = q[7:23]
+
+    link_poses_hand_frame = chain.forward_kinematics(q)
+    X_W_Wrist = (
+        link_poses_hand_frame[wrist_body_name].get_matrix().squeeze(dim=0).cpu().numpy()
+    )
+
+    assert X_W_Wrist.shape == (4, 4)
+    assert hand_joint_angles.shape == (16,)
+    return X_W_Wrist, hand_joint_angles
+
+
+# %%
+chain = get_kinematic_chain(model_path=args.robot_model_path)
+
+# %%
 vertices_O = mesh.vertices
 vertices_W = transform_points(points=vertices_O, T=X_W_O)
 fig = go.Figure()
@@ -266,38 +298,9 @@ fig.add_trace(
 )
 add_transform_traces(fig=fig, T=np.eye(4), name="T_W")
 add_transform_traces(fig=fig, T=X_W_O, name="T_O")
-fig.show()
-
 
 # %%
-def get_kinematic_chain(model_path: pathlib.Path) -> pk.Chain:
-    with open(model_path) as f:
-        chain = pk.build_chain_from_urdf(f.read())
-        chain = chain.to(device="cuda", dtype=torch.float32)
-    return chain
-
-
-chain = get_kinematic_chain(model_path=args.robot_model_path)
-
-
-# %%
-def q_to_T_W_H_and_joint_angles(
-    q: np.ndarray, chain: pk.Chain, wrist_body_name: str
-) -> Tuple[np.ndarray, np.ndarray]:
-    assert q.shape == (23,)
-    hand_joint_angles = q[7:23]
-
-    link_poses_hand_frame = chain.forward_kinematics(q)
-    X_W_Wrist = (
-        link_poses_hand_frame[wrist_body_name].get_matrix().squeeze(dim=0).cpu().numpy()
-    )
-
-    assert X_W_Wrist.shape == (4, 4)
-    assert hand_joint_angles.shape == (16,)
-    return X_W_Wrist, hand_joint_angles
-
-
-# %%
+IDX = 1
 X_W_Wrist, _ = q_to_T_W_H_and_joint_angles(
     q=q_array[IDX], chain=chain, wrist_body_name=args.wrist_body_name
 )
@@ -333,6 +336,7 @@ fig.show()
 
 # %%
 # %%
+@localscope.mfc
 def q_array_to_hand_config_dict(
     q_array: np.ndarray, X_W_O: np.ndarray, X_O_Oy: np.ndarray
 ) -> dict:
@@ -380,69 +384,7 @@ def q_array_to_hand_config_dict(
 
 
 # %%
-# def add_line_trace(
-#     fig: go.Figure,
-#     start_point: np.ndarray,
-#     direction: np.ndarray,
-#     name: str,
-#     length: float = 0.02,
-# ) -> None:
-#     assert start_point.shape == (3,)
-#     assert direction.shape == (3,)
-#     assert np.allclose(np.linalg.norm(direction), 1.0)
-# 
-#     end_point = start_point + length * direction
-#     print(f"start_point: {start_point}")
-#     print(f"end_point: {end_point}")
-#     print(f"direction: {direction}")
-#     print()
-# 
-#     fig.add_trace(
-#         go.Scatter3d(
-#             x=[start_point[0], end_point[0]],
-#             y=[start_point[1], end_point[1]],
-#             z=[start_point[2], end_point[2]],
-#             mode="lines",
-#             line=dict(color="black"),
-#             name=name,
-#         )
-#     )
-# 
-# 
-# assert model.n_O.shape == (3, 4)
-# assert model.n_W.shape == (3, 4)
-# for i in range(model.n_O.shape[1]):
-#     assert np.allclose(np.linalg.norm(model.n_O[:, i]), 1.0)
-#     assert np.allclose(np.linalg.norm(model.n_W[:, i]), 1.0)
-# 
-# # for i in range(model.n_O.shape[1]):
-# #     start_position = X_W_fingertip_list[i][:3, 3]
-# #     direction = model.n_O[:, i]
-# #     add_line_trace(fig=fig, start_point=start_position, direction=direction, name=f"n_W {i}")
-# for i in range(model.n_W.shape[1]):
-#     start_position = X_W_fingertip_list[i][:3, 3]
-#     direction = model.n_W[:, i]
-#     print(f"n_W {i}: {direction}")
-#     add_line_trace(
-#         fig=fig, start_point=start_position, direction=direction, name=f"n_W {i}"
-#     )
-# 
-# fig.show()
-
-# %%
-
-model.n_W
-# %%
-model.n_O
-# %%
-
-# %%
-q_array.shape
-# %%
-model.n_O, model.R_cf_O
-
-
-# %%
+@localscope.mfc
 def R_p_to_T(R: np.ndarray, p: np.ndarray) -> np.ndarray:
     print(f"R: {R}")
     assert R.shape == (3, 3)
@@ -457,23 +399,17 @@ def R_p_to_T(R: np.ndarray, p: np.ndarray) -> np.ndarray:
 assert model.R_cf_O.shape == (4, 3, 3)
 for i in range(model.R_cf_O.shape[0]):
     # add_transform_traces(fig=fig, T=R_p_to_T(R=model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
-    add_transform_traces(fig=fig, T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
+    add_transform_traces(
+        fig=fig,
+        T=X_W_fingertip_list[i] @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)),
+        name=f"R_cf_O {i}",
+    )
     # add_transform_traces(fig=fig, T=X_W_O @ R_p_to_T(R=model.R_cf_O[i], p=np.zeros(3)), name=f"R_cf_O {i}")
     # add_transform_traces(fig=fig, T=R_p_to_T(R=X_W_O[:3, :3] @ model.R_cf_O[i], p=X_W_fingertip_list[i][:3, 3]), name=f"R_cf_O {i}")
 fig.show()
 
 # %%
 model.n_O, model.R_cf_O
-
-# %%
-
-# %%
-visualize_q_with_pydrake(mesh_object=mesh_object, q=q_array[IDX])
-
-# %%
-X_W_O[:3, :3]
-# %%
-print(f"model.R_cf_O = \n{model.R_cf_O}")
 
 # %%
 hand_config_dict = q_array_to_hand_config_dict(
@@ -491,13 +427,7 @@ np.save(
 )
 
 # %%
-hand_config_dict['joint_angles'].shape
-
-# %%
-hand_config_dict['trans']
-
-# %%
-visualize_q_with_pydrake(mesh_object=mesh_object, q=q_array[2])
+visualize_q_with_pydrake_blocking(mesh_object=mesh_object, q=q_array[2])
 
 # %%
 X_Oy_O = np.linalg.inv(X_O_Oy)
@@ -521,11 +451,12 @@ fig.add_trace(
     )
 )
 add_transform_traces(fig=fig, T=np.eye(4), name="T_Oy")
-fig.show()
 # %%
 add_transform_traces(fig=fig, T=X_Oy_O @ X_O_W @ X_W_Wrist, name="T_Wrist")
 for i, X_W_fingertip in enumerate(X_W_fingertip_list):
-    add_transform_traces(fig=fig, T=X_Oy_O @ X_O_W @ X_W_fingertip, name=f"T_fingertip {i}")
+    add_transform_traces(
+        fig=fig, T=X_Oy_O @ X_O_W @ X_W_fingertip, name=f"T_fingertip {i}"
+    )
 fig.show()
 
 # %%
