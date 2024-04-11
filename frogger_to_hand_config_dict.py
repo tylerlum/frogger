@@ -21,12 +21,10 @@ import tyro
 @dataclass
 class Args:
     obj_filepath: pathlib.Path = pathlib.Path(
-        # "/juno/u/tylerlum/github_repos/nerf_grasping/nerf_grasping/baselines/nerf_meshdata/core-bottle-194f4eb1707aaf674c8b72e8da0e65c5/coacd/decomposed.obj"
         "/juno/u/tylerlum/github_repos/DexGraspNet/data/meshdata/core-bottle-2927d6c8438f6e24fe6460d8d9bd16c6/coacd/decomposed.obj"
     )
     obj_scale: float = 0.0915
     num_grasps: int = 3
-    # obj_name: str = "core-bottle-194f4eb1707aaf674c8b72e8da0e65c5"
     obj_name: str = "core-bottle-2927d6c8438f6e24fe6460d8d9bd16c6"
     obj_is_yup: bool = True
     hand: str = "rh"

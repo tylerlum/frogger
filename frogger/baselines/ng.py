@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Tuple
 
 import numpy as np
-# import pypose as pp
+import pypose as pp
 import pytorch_kinematics as pk
 import torch
 
@@ -12,16 +12,16 @@ from frogger.baselines.base import BaselineConfig
 from frogger.robots.robot_core import RobotModel
 from frogger.robots.robots import AlgrModel, FR3AlgrModel, FR3AlgrZed2iModel
 
-# try:
-#     import nerf_grasping
-#     from nerf_grasping.config.grasp_metric_config import GraspMetricConfig
-#     from nerf_grasping.optimizer_utils import AllegroGraspConfig, GraspMetric
-# except ImportError:
-#     raise ImportError(
-#         "The NeRF grasping baseline requires the `nerf_grasping` package. "
-#         "Please install it with frogger using `pip install -e .[ng]` or "
-#         "`pip install -e .[all]`."
-#     )
+try:
+    import nerf_grasping
+    from nerf_grasping.config.grasp_metric_config import GraspMetricConfig
+    from nerf_grasping.optimizer_utils import AllegroGraspConfig, GraspMetric
+except ImportError:
+    raise ImportError(
+        "The NeRF grasping baseline requires the `nerf_grasping` package. "
+        "Please install it with frogger using `pip install -e .[ng]` or "
+        "`pip install -e .[all]`."
+    )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
