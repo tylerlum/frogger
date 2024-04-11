@@ -15,6 +15,7 @@ from frogger.robots.robot_core import RobotModel
 import plotly.graph_objects as go
 import pathlib
 from dataclasses import dataclass
+import tyro
 
 
 @dataclass
@@ -35,7 +36,8 @@ class Args:
     output_hand_config_dicts_folder: pathlib.Path = pathlib.Path(
         "./output_hand_config_dicts"
     )
-    grasp_idx_to_plot: int = 1
+    visualize: bool = False
+    grasp_idx_to_visualize: int = 1
 
     @property
     def wrist_body_name(self) -> str:
@@ -278,8 +280,7 @@ def q_array_to_hand_config_dict(
 
 
 def main() -> None:
-
-    args = Args()
+    args = tyro.cli(Args)
     # args = Args(
     #     obj_filepath=pathlib.Path(
     #         ROOT + "/data/001_chips_can/001_chips_can_clean.obj"
@@ -288,8 +289,9 @@ def main() -> None:
     #     obj_name="001_chips_can",
     #     obj_is_yup=False,
     # )
+
     print("=" * 80)
-    print(f"args: {args}")
+    print(f"args:\n{tyro.extras.to_yaml(args)}")
     print("=" * 80 + "\n")
 
     # Prepare mesh object
@@ -307,41 +309,19 @@ def main() -> None:
 
     # Wrist
     X_W_Wrist, _ = q_to_T_W_H_and_joint_angles(
-        q=q_array[args.grasp_idx_to_plot],
+        q=q_array[args.grasp_idx_to_visualize],
         chain=chain,
         wrist_body_name=args.wrist_body_name,
     )
 
     # Fingers
-    link_poses_hand_frame = chain.forward_kinematics(q_array[args.grasp_idx_to_plot])
+    link_poses_hand_frame = chain.forward_kinematics(
+        q_array[args.grasp_idx_to_visualize]
+    )
     X_W_fingertip_list = [
         link_poses_hand_frame[ln].get_matrix().squeeze(dim=0).cpu().numpy()
         for ln in args.fingertip_body_names
     ]
-
-    # World frame vis
-    fig = go.Figure()
-    fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="W frame"))
-    vertices_O = mesh.vertices
-    vertices_W = transform_points(points=vertices_O, T=X_W_O)
-    fig.add_trace(
-        go.Mesh3d(
-            x=vertices_W[:, 0],
-            y=vertices_W[:, 1],
-            z=vertices_W[:, 2],
-            i=mesh.faces[:, 0],
-            j=mesh.faces[:, 1],
-            k=mesh.faces[:, 2],
-            color="lightpink",
-            opacity=0.50,
-        )
-    )
-    add_transform_traces(fig=fig, T=np.eye(4), name="T_W")
-    add_transform_traces(fig=fig, T=X_W_O, name="T_O")
-    add_transform_traces(fig=fig, T=X_W_Wrist, name="T_Wrist")
-    for i, X_W_fingertip in enumerate(X_W_fingertip_list):
-        add_transform_traces(fig=fig, T=X_W_fingertip, name=f"T_fingertip {i}")
-    fig.show()
 
     # Frames
     if args.obj_is_yup:
@@ -351,28 +331,6 @@ def main() -> None:
     X_Oy_O = np.linalg.inv(X_O_Oy)
     X_O_W = np.linalg.inv(X_W_O)
     X_Oy_W = X_Oy_O @ X_O_W
-
-    # Oy frame vis
-    fig = go.Figure()
-    fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="Oy frame"))
-    vertices_Oy = transform_points(points=vertices_O, T=X_Oy_O)
-    fig.add_trace(
-        go.Mesh3d(
-            x=vertices_Oy[:, 0],
-            y=vertices_Oy[:, 1],
-            z=vertices_Oy[:, 2],
-            i=mesh.faces[:, 0],
-            j=mesh.faces[:, 1],
-            k=mesh.faces[:, 2],
-            color="lightpink",
-            opacity=0.50,
-        )
-    )
-    add_transform_traces(fig=fig, T=np.eye(4), name="T_Oy")
-    add_transform_traces(fig=fig, T=X_Oy_W @ X_W_Wrist, name="T_Wrist")
-    for i, X_W_fingertip in enumerate(X_W_fingertip_list):
-        add_transform_traces(fig=fig, T=X_Oy_W @ X_W_fingertip, name=f"T_fingertip {i}")
-    fig.show()
 
     # Create and save hand_config_dict
     hand_config_dict = q_array_to_hand_config_dict(
@@ -391,9 +349,59 @@ def main() -> None:
     )
 
     # Visualize
-    visualize_q_with_pydrake_blocking(
-        mesh_object=mesh_object, q=q_array[args.grasp_idx_to_plot]
-    )
+    if args.visualize:
+        # World frame vis
+        fig = go.Figure()
+        fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="W frame"))
+        vertices_O = mesh.vertices
+        vertices_W = transform_points(points=vertices_O, T=X_W_O)
+        fig.add_trace(
+            go.Mesh3d(
+                x=vertices_W[:, 0],
+                y=vertices_W[:, 1],
+                z=vertices_W[:, 2],
+                i=mesh.faces[:, 0],
+                j=mesh.faces[:, 1],
+                k=mesh.faces[:, 2],
+                color="lightpink",
+                opacity=0.50,
+            )
+        )
+        add_transform_traces(fig=fig, T=np.eye(4), name="T_W")
+        add_transform_traces(fig=fig, T=X_W_O, name="T_O")
+        add_transform_traces(fig=fig, T=X_W_Wrist, name="T_Wrist")
+        for i, X_W_fingertip in enumerate(X_W_fingertip_list):
+            add_transform_traces(fig=fig, T=X_W_fingertip, name=f"T_fingertip {i}")
+        fig.show()
+
+        # Oy frame vis
+        fig = go.Figure()
+        fig.update_layout(scene=dict(aspectmode="data"), title=dict(text="Oy frame"))
+        vertices_Oy = transform_points(points=vertices_O, T=X_Oy_O)
+        fig.add_trace(
+            go.Mesh3d(
+                x=vertices_Oy[:, 0],
+                y=vertices_Oy[:, 1],
+                z=vertices_Oy[:, 2],
+                i=mesh.faces[:, 0],
+                j=mesh.faces[:, 1],
+                k=mesh.faces[:, 2],
+                color="lightpink",
+                opacity=0.50,
+            )
+        )
+        add_transform_traces(fig=fig, T=np.eye(4), name="T_Oy")
+        add_transform_traces(fig=fig, T=X_Oy_W @ X_W_Wrist, name="T_Wrist")
+        for i, X_W_fingertip in enumerate(X_W_fingertip_list):
+            add_transform_traces(
+                fig=fig, T=X_Oy_W @ X_W_fingertip, name=f"T_fingertip {i}"
+            )
+        fig.show()
+
+        # Drake vis
+        visualize_q_with_pydrake_blocking(
+            mesh_object=mesh_object, q=q_array[args.grasp_idx_to_visualize]
+        )
 
 
 if __name__ == "__main__":
