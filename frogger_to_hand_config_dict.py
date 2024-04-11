@@ -14,7 +14,7 @@ from frogger.solvers import FroggerConfig
 from frogger.robots.robot_core import RobotModel
 import plotly.graph_objects as go
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import tyro
 
 
@@ -40,12 +40,14 @@ class RobotConstants:
         pathlib.Path(ROOT) / "models/fr3_algr_zed2i/fr3_algr_zed2i.urdf"
     )
     wrist_body_name: str = "algr_rh_palm"
-    fingertip_body_names: List[str] = [
-        "algr_rh_if_ds_tip",
-        "algr_rh_mf_ds_tip",
-        "algr_rh_rf_ds_tip",
-        "algr_rh_th_ds_tip",
-    ]
+    fingertip_body_names: List[str] = field(
+        default_factory=lambda: [
+            "algr_rh_if_ds_tip",
+            "algr_rh_mf_ds_tip",
+            "algr_rh_rf_ds_tip",
+            "algr_rh_th_ds_tip",
+        ]
+    )
 
 
 def create_mesh(obj_filepath: pathlib.Path, obj_scale: float) -> trimesh.Trimesh:
