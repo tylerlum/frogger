@@ -24,46 +24,28 @@ class Args:
         "/juno/u/tylerlum/github_repos/DexGraspNet/data/meshdata/core-bottle-2927d6c8438f6e24fe6460d8d9bd16c6/coacd/decomposed.obj"
     )
     obj_scale: float = 0.0915
-    num_grasps: int = 3
     obj_name: str = "core-bottle-2927d6c8438f6e24fe6460d8d9bd16c6"
     obj_is_yup: bool = True
-    hand: str = "rh"
-    robot_model_path: pathlib.Path = (
-        pathlib.Path(ROOT) / "models/fr3_algr_zed2i/fr3_algr_zed2i.urdf"
-    )
+    num_grasps: int = 3
     output_hand_config_dicts_folder: pathlib.Path = pathlib.Path(
         "./output_hand_config_dicts"
     )
     visualize: bool = False
     grasp_idx_to_visualize: int = 1
 
-    @property
-    def wrist_body_name(self) -> str:
-        if self.hand == "lh":
-            return "algr_lh_palm"
-        elif self.hand == "rh":
-            return "algr_rh_palm"
-        else:
-            raise ValueError(f"Invalid hand: {self.hand}")
 
-    @property
-    def fingertip_body_names(self) -> List[str]:
-        if self.hand == "lh":
-            return [
-                "algr_lh_if_ds_tip",
-                "algr_lh_mf_ds_tip",
-                "algr_lh_rf_ds_tip",
-                "algr_lh_th_ds_tip",
-            ]
-        elif self.hand == "rh":
-            return [
-                "algr_rh_if_ds_tip",
-                "algr_rh_mf_ds_tip",
-                "algr_rh_rf_ds_tip",
-                "algr_rh_th_ds_tip",
-            ]
-        else:
-            raise ValueError(f"Invalid hand: {self.hand}")
+@dataclass
+class RobotConstants:
+    robot_model_path: pathlib.Path = (
+        pathlib.Path(ROOT) / "models/fr3_algr_zed2i/fr3_algr_zed2i.urdf"
+    )
+    wrist_body_name: str = "algr_rh_palm"
+    fingertip_body_names: List[str] = [
+        "algr_rh_if_ds_tip",
+        "algr_rh_mf_ds_tip",
+        "algr_rh_rf_ds_tip",
+        "algr_rh_th_ds_tip",
+    ]
 
 
 def create_mesh(obj_filepath: pathlib.Path, obj_scale: float) -> trimesh.Trimesh:
@@ -288,6 +270,8 @@ def main() -> None:
     #     obj_is_yup=False,
     # )
 
+    rc = RobotConstants()
+
     print("=" * 80)
     print(f"args:\n{tyro.extras.to_yaml(args)}")
     print("=" * 80 + "\n")
@@ -303,13 +287,13 @@ def main() -> None:
     q_array = zup_mesh_to_q_array(mesh_object=mesh_object, num_grasps=args.num_grasps)
 
     # Prepare kinematic chain
-    chain = get_kinematic_chain(model_path=args.robot_model_path)
+    chain = get_kinematic_chain(model_path=rc.robot_model_path)
 
     # Wrist
     X_W_Wrist, _ = q_to_T_W_H_and_joint_angles(
         q=q_array[args.grasp_idx_to_visualize],
         chain=chain,
-        wrist_body_name=args.wrist_body_name,
+        wrist_body_name=rc.wrist_body_name,
     )
 
     # Fingers
@@ -318,7 +302,7 @@ def main() -> None:
     )
     X_W_fingertip_list = [
         link_poses_hand_frame[ln].get_matrix().squeeze(dim=0).cpu().numpy()
-        for ln in args.fingertip_body_names
+        for ln in rc.fingertip_body_names
     ]
 
     # Frames
@@ -335,7 +319,7 @@ def main() -> None:
         q_array=q_array,
         chain=chain,
         X_Oy_W=X_Oy_W,
-        wrist_body_name=args.wrist_body_name,
+        wrist_body_name=rc.wrist_body_name,
     )
     args.output_hand_config_dicts_folder.mkdir(exist_ok=True)
     np.save(
