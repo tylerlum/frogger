@@ -216,10 +216,10 @@ class RobotModel:
             "obj",
             self.obj_instance,
             SpatialInertia(
-                self.obj.mass,
+                1,
                 np.zeros(3),
                 UnitInertia(
-                    I_o[0, 0], I_o[1, 1], I_o[2, 2], I_o[0, 1], I_o[0, 2], I_o[1, 2]
+                    1, 1, 1, 0, 0, 0
                 ),
             ),
         )
