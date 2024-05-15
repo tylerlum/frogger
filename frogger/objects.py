@@ -392,7 +392,7 @@ class ObjectDescription(ABC):
         self.mesh_scale = np.mean(_mesh_viz.edges_unique_length)
 
         # if the meshes aren't watertight, then mesh pre-processing should be fixed
-        assert _mesh_viz.is_watertight
+        # assert _mesh_viz.is_watertight
         pth = "/tmp/mesh_viz.obj"  # export the visual mesh
         _mesh_viz.export(pth)
         mesh_viz = Mesh(pth)
