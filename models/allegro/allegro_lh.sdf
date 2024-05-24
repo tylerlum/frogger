@@ -80,6 +80,52 @@ the thumb to axially rotate, and the mcp and ip joints are in order as above.
 -->
 <sdf version="1.7">
   <model name="algr_lh_simplified">
+
+    <!-- ######## -->
+    <!-- TABLETOP -->
+    <!-- ######## -->
+
+    <link name="tabletop_base">
+      <pose>0.34 0.0 -0.05 0.0 0.0 0.0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>10</mass>
+        <inertia>
+          <ixx>3.3417</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.84167</iyy>
+          <iyz>0</iyz>
+          <izz>4.1667</izz>
+        </inertia>
+      </inertial>
+      <visual name="tabletop_visual">
+        <geometry>
+          <box>
+            <size>1 2 0.1</size>
+          </box>
+        </geometry>
+        <material>
+          <diffuse>0.859375 0.70703125 0.47265625 1.</diffuse>
+        </material>
+      </visual>
+      <collision name="tabletop_collision">
+        <geometry>
+          <box>
+            <size>1 2 0.1</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="table_weld" type="fixed">
+      <child>tabletop_base</child>
+      <parent>world</parent>
+    </joint>
+
+    <!-- ############ -->
+    <!-- ALLEGRO HAND -->
+    <!-- ############ -->
+    
     <link name="algr_lh_palm">
       <inertial>
         <pose>-0.0093 0 0.0475 0 0 0</pose>
