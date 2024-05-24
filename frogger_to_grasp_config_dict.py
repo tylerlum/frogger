@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import trimesh
 from pydrake.math import RigidTransform, RotationMatrix
 from tqdm import tqdm
@@ -281,17 +281,7 @@ def q_array_to_grasp_config_dict(
     }
 
 
-def main() -> None:
-    args = tyro.cli(Args)
-    # args = Args(
-    #     obj_filepath=pathlib.Path(
-    #         ROOT + "/data/001_chips_can/001_chips_can_clean.obj"
-    #     ),
-    #     obj_scale=1.0,
-    #     obj_name="001_chips_can",
-    #     obj_is_yup=False,
-    # )
-
+def frogger_to_grasp_config_dict(args: Args, X_W_O: Optional[np.ndarray] = None) -> dict:
     rc = RobotConstants()
 
     print("=" * 80)
@@ -300,7 +290,9 @@ def main() -> None:
 
     # Prepare mesh object
     mesh = create_mesh(obj_filepath=args.obj_filepath, obj_scale=args.obj_scale)
-    X_W_O = compute_X_W_O(mesh=mesh, obj_is_yup=args.obj_is_yup)
+    if X_W_O is None:
+        X_W_O = compute_X_W_O(mesh=mesh, obj_is_yup=args.obj_is_yup)
+
     mesh_object = create_frogger_mesh_object(
         mesh=mesh, obj_name=args.obj_name, X_W_O=X_W_O
     )
@@ -410,6 +402,21 @@ def main() -> None:
         visualize_q_with_pydrake_blocking(
             mesh_object=mesh_object, q=q_array[args.grasp_idx_to_visualize]
         )
+    return grasp_config_dict
+
+
+def main() -> None:
+    args = tyro.cli(Args)
+    # args = Args(
+    #     obj_filepath=pathlib.Path(
+    #         ROOT + "/data/001_chips_can/001_chips_can_clean.obj"
+    #     ),
+    #     obj_scale=1.0,
+    #     obj_name="001_chips_can",
+    #     obj_is_yup=False,
+    # )
+
+    frogger_to_grasp_config_dict(args)
 
 
 if __name__ == "__main__":
