@@ -1,5 +1,24 @@
 <?xml version="1.0"?>
 <robot name="bhand">
+  <!-- TABLE -->
+  <joint name="table_joint" type="fixed">
+    <parent link="world"/>
+    <child link="table"/>
+    <origin rpy="0 0 0" xyz="0.50165 0 -0.01"/>
+  </joint>
+  <link name="table">
+    <visual name="tabletop_visual">
+      <geometry>
+        <box size="1.3208 1.8288 0.02"/>
+      </geometry>
+    </visual>
+    <collision name="tabletop_collision">
+      <geometry>
+        <box size="1.3208 1.8288 0.02"/>
+      </geometry>
+    </collision>
+  </link>
+  
   <!-- HAND BASE (RED) -->
   <link name="bh_palm">
     <inertial>
@@ -114,7 +133,7 @@
     <child link="bh_finger_33"/>
     <origin rpy="0 0 0" xyz="-0.069936 0.003 0"/>
     <axis xyz="0 0 -1"/>
-    <mimic joint="bh_j32_joint" multiplier="0.3442622950819672"/>
+    <!-- <mimic joint="bh_j32_joint" multiplier="0.3442622950819672"/> -->
     <limit effort="30.0" lower="0.0" upper="0.84" velocity="2.0"/>
   </joint>
   <!-- finger 1 -->
@@ -235,7 +254,7 @@
     <child link="bh_finger_13"/>
     <origin rpy="0 0 0" xyz="-0.069936 0.003 0"/>
     <axis xyz="0 0 -1"/>
-    <mimic joint="bh_j12_joint" multiplier="0.3442622950819672"/>
+    <!-- <mimic joint="bh_j12_joint" multiplier="0.3442622950819672"/> -->
     <limit effort="30.0" lower="0.0" upper="0.84" velocity="2.0"/>
   </joint>
   <!-- finger 2 -->
@@ -273,7 +292,7 @@
     <child link="bh_finger_21"/>
     <origin rpy="0 0 -1.5708" xyz="-0.025 0 0.0415"/>
     <axis xyz="0 0 1"/>
-    <mimic joint="bh_j11_joint" multiplier="1"/>
+    <!-- <mimic joint="bh_j11_joint" multiplier="1"/> -->
     <limit effort="30.0" lower="0" upper="3.1416" velocity="2.0"/>
   </joint>
   <!-- finger 12 link -->
@@ -346,7 +365,7 @@
     <child link="bh_finger_23"/>
     <origin rpy="0 0 0" xyz="-0.069936 0.003 0"/>
     <axis xyz="0 0 -1"/>
-    <mimic joint="bh_j22_joint" multiplier="0.3442622950819672"/>
+    <!-- <mimic joint="bh_j22_joint" multiplier="0.3442622950819672"/> -->
     <limit effort="30.0" lower="0.0" upper="0.84" velocity="2.0"/>
   </joint>
   <!-- adding frame for heuristic IK sampling -->

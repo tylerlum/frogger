@@ -6,6 +6,8 @@ from numba import jit
 from pydrake.geometry import (
     AddContactMaterial,
     AddRigidHydroelasticProperties,
+    CollisionFilterDeclaration,
+    GeometrySet,
     MeshcatVisualizer,
     MeshcatVisualizerParams,
     ProximityProperties,
@@ -154,6 +156,26 @@ class RobotModel:
                 if robot_body not in _robot_collision_bodies:
                     _robot_collision_bodies.append(robot_body)
 
+        # [FORK ONLY] collision filtering the table with the object
+        ##############################################################################
+        cfm = self.scene_graph.collision_filter_manager(self.sg_context)
+        inspector = self.query_object.inspector()
+        self.obj_geoms = []
+        tabletop_geom = None
+
+        for g in inspector.GetAllGeometryIds():
+            name = inspector.GetName(g)
+            if "obj" in name and "visual" not in name:
+                self.obj_geoms.append(g)
+
+            elif "tabletop_collision" in name:
+                tabletop_geom = g
+
+        tabletop_set = GeometrySet(tabletop_geom)
+        obj_set = GeometrySet(self.obj_geoms)
+        cfm.Apply(CollisionFilterDeclaration().ExcludeBetween(tabletop_set, obj_set))
+        ##############################################################################
+
         # internal dimensions
         self.nc = len(_robot_collision_bodies)  # number of contact points
         self.n = self.plant.num_positions() - 7  # exclude the object pose states
@@ -211,16 +233,14 @@ class RobotModel:
         # registering object's visual/collision geoms with the plant
         assert None not in [self.obj.shape_visual, self.obj.shape_collision_list]
         self.obj_instance = self.plant.AddModelInstance("obj")
-        I_o = self.obj.inertia / self.obj.mass
+        # I_o = self.obj.inertia / self.obj.mass  # [UNUSED]
         self.obj_body = self.plant.AddRigidBody(
             "obj",
             self.obj_instance,
             SpatialInertia(
                 1,
                 np.zeros(3),
-                UnitInertia(
-                    1, 1, 1, 0, 0, 0
-                ),
+                UnitInertia(1, 1, 1, 0, 0, 0),
             ),
         )
 
