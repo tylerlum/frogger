@@ -27,8 +27,8 @@ class Args:
     obj_name: str = "core-bottle-2927d6c8438f6e24fe6460d8d9bd16c6"
     obj_is_yup: bool = True
     num_grasps: int = 3
-    output_hand_config_dicts_folder: pathlib.Path = pathlib.Path(
-        "./output_hand_config_dicts"
+    output_grasp_config_dicts_folder: pathlib.Path = pathlib.Path(
+        "./output_grasp_config_dicts"
     )
     visualize: bool = False
     grasp_idx_to_visualize: int = 1
@@ -99,7 +99,9 @@ def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
     ).create()
 
 
-def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
+def zup_mesh_to_q_array(
+    mesh_object: MeshObject, num_grasps: int
+) -> Tuple[np.ndarray, np.ndarray]:
     # loading model
     model = create_model(mesh_object=mesh_object, viz=False)
 
@@ -118,14 +120,20 @@ def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
     ).create()
 
     q_array = []
+    R_O_cf_array = []
     for _ in tqdm(range(num_grasps)):
         q_star = frogger.generate_grasp()
         assert q_star is not None
         assert q_star.shape == (23,)
         q_array.append(q_star)
+        assert model.R_O_cf is not None
+        R_O_cf_array.append(np.copy(model.R_O_cf))
+
     q_array = np.array(q_array)
+    R_O_cf_array = np.array(R_O_cf_array)
     assert q_array.shape == (num_grasps, 23)
-    return q_array
+    assert R_O_cf_array.shape == (num_grasps, 4, 3, 3)
+    return q_array, R_O_cf_array
 
 
 def visualize_q_with_pydrake_blocking(mesh_object: MeshObject, q: np.ndarray) -> None:
@@ -216,22 +224,24 @@ def q_to_T_W_H_and_joint_angles(
     return X_W_Wrist, hand_joint_angles
 
 
-def q_array_to_hand_config_dict(
+def q_array_to_grasp_config_dict(
     q_array: np.ndarray,
     chain: pk.Chain,
     X_Oy_W: np.ndarray,
     wrist_body_name: str,
+    R_O_cf_array: np.ndarray,
 ) -> dict:
     # W = world frame z-up
     # O = object frame z-up
     # Oy = object frame y-up
     # H = hand/frame z along finger, x away from palm
     # Assumes q in W frame
-    # Assumes hand_config_dict in Oy frame
+    # Assumes grasp_config_dict in Oy frame
 
     B = q_array.shape[0]
     assert q_array.shape == (B, 23)
     assert X_Oy_W.shape == (4, 4)
+    assert R_O_cf_array.shape == (B, 4, 3, 3)
 
     X_W_H_array, joint_angles_array = [], []
     for i in range(B):
@@ -254,10 +264,13 @@ def q_array_to_hand_config_dict(
         X_Oy_H_array.append(X_Oy_H)
     X_Oy_H_array = np.array(X_Oy_H_array)
 
+    grasp_orientations_array = np.copy(R_O_cf_array)
+
     return {
         "trans": X_Oy_H_array[:, :3, 3],
         "rot": X_Oy_H_array[:, :3, :3],
         "joint_angles": joint_angles_array,
+        "grasp_orientations": grasp_orientations_array,
     }
 
 
@@ -286,7 +299,9 @@ def main() -> None:
     )
 
     # Compute grasps
-    q_array = zup_mesh_to_q_array(mesh_object=mesh_object, num_grasps=args.num_grasps)
+    q_array, R_O_cf_array = zup_mesh_to_q_array(
+        mesh_object=mesh_object, num_grasps=args.num_grasps
+    )
 
     # Prepare kinematic chain
     chain = get_kinematic_chain(model_path=rc.robot_model_path)
@@ -316,19 +331,20 @@ def main() -> None:
     X_O_W = np.linalg.inv(X_W_O)
     X_Oy_W = X_Oy_O @ X_O_W
 
-    # Create and save hand_config_dict
-    hand_config_dict = q_array_to_hand_config_dict(
+    # Create and save grasp_config_dict
+    grasp_config_dict = q_array_to_grasp_config_dict(
         q_array=q_array,
         chain=chain,
         X_Oy_W=X_Oy_W,
         wrist_body_name=rc.wrist_body_name,
+        R_O_cf_array=R_O_cf_array,
     )
-    args.output_hand_config_dicts_folder.mkdir(exist_ok=True)
+    args.output_grasp_config_dicts_folder.mkdir(exist_ok=True)
     np.save(
         # eg. Convert 0.0915 to 0_0915 (always 4 decimal places)
-        args.output_hand_config_dicts_folder
+        args.output_grasp_config_dicts_folder
         / f"{args.obj_name}_{args.obj_scale:.4f}".replace(".", "_"),
-        hand_config_dict,
+        grasp_config_dict,
         allow_pickle=True,
     )
 
