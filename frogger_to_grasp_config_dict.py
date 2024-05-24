@@ -101,7 +101,7 @@ def create_model(mesh_object: MeshObject, viz: bool = False) -> RobotModel:
 
 def zup_mesh_to_q_array(
     mesh_object: MeshObject, num_grasps: int
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     # loading model
     model = create_model(mesh_object=mesh_object, viz=False)
 
@@ -121,6 +121,7 @@ def zup_mesh_to_q_array(
 
     q_array = []
     R_O_cf_array = []
+    l_array = []
     for _ in tqdm(range(num_grasps)):
         q_star = frogger.generate_grasp()
         assert q_star is not None
@@ -128,12 +129,15 @@ def zup_mesh_to_q_array(
         q_array.append(q_star)
         assert model.R_O_cf is not None
         R_O_cf_array.append(np.copy(model.R_O_cf))
+        l_array.append(model.l)
 
     q_array = np.array(q_array)
     R_O_cf_array = np.array(R_O_cf_array)
+    l_array = np.array(l_array)
     assert q_array.shape == (num_grasps, 23)
     assert R_O_cf_array.shape == (num_grasps, 4, 3, 3)
-    return q_array, R_O_cf_array
+    assert l_array.shape == (num_grasps,)
+    return q_array, R_O_cf_array, l_array
 
 
 def visualize_q_with_pydrake_blocking(mesh_object: MeshObject, q: np.ndarray) -> None:
@@ -230,6 +234,7 @@ def q_array_to_grasp_config_dict(
     X_Oy_W: np.ndarray,
     wrist_body_name: str,
     R_O_cf_array: np.ndarray,
+    l_array: np.ndarray,
 ) -> dict:
     # W = world frame z-up
     # O = object frame z-up
@@ -242,6 +247,7 @@ def q_array_to_grasp_config_dict(
     assert q_array.shape == (B, 23)
     assert X_Oy_W.shape == (4, 4)
     assert R_O_cf_array.shape == (B, 4, 3, 3)
+    assert l_array.shape == (B,)
 
     X_W_H_array, joint_angles_array = [], []
     for i in range(B):
@@ -271,6 +277,7 @@ def q_array_to_grasp_config_dict(
         "rot": X_Oy_H_array[:, :3, :3],
         "joint_angles": joint_angles_array,
         "grasp_orientations": grasp_orientations_array,
+        "loss": -l_array,
     }
 
 
@@ -299,7 +306,7 @@ def main() -> None:
     )
 
     # Compute grasps
-    q_array, R_O_cf_array = zup_mesh_to_q_array(
+    q_array, R_O_cf_array, l_array = zup_mesh_to_q_array(
         mesh_object=mesh_object, num_grasps=args.num_grasps
     )
 
@@ -338,6 +345,7 @@ def main() -> None:
         X_Oy_W=X_Oy_W,
         wrist_body_name=rc.wrist_body_name,
         R_O_cf_array=R_O_cf_array,
+        l_array=l_array,
     )
     args.output_grasp_config_dicts_folder.mkdir(exist_ok=True)
     np.save(
