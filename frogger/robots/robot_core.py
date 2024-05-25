@@ -461,7 +461,19 @@ class RobotModel:
             if has_tip and has_obj:
                 self.g[self.n_bounds + i] = -sd - d_pen  # allow tips to penetrate obj
             else:
-                self.g[self.n_bounds + i] = d_min - sd  # other pairs must respect d_min
+                # [FORK ONLY] disgusting hack to force certain geoms to be farther from obj
+                ###########################################################################
+                has_algr = "algr" in names[0] or "algr" in names[1]
+                if has_algr and has_obj:
+                    self.g[self.n_bounds + i] = (
+                        0.01 - sd
+                    )  # other pairs must respect d_min
+                else:
+                    self.g[self.n_bounds + i] = (
+                        d_min - sd
+                    )  # other pairs must respect d_min
+                ###########################################################################
+                # self.g[self.n_bounds + i] = d_min - sd  # other pairs must respect d_min
             Dgi = -(J_A - J_B).T @ nrml
             self.Dg[self.n_bounds + i, :] = Dgi
 

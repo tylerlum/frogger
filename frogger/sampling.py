@@ -346,7 +346,7 @@ class HeuristicAlgrICSampler(HeuristicICSampler):
         """
         # set guess for hand
         q_imr = np.array([0.0, 0.5, 0.5, 0.5])  # if, mf, rf
-        q_th = np.array([1.2, 0.5, 0.5, 0.4])  # th
+        q_th = np.array([1.2, 0.3, 0.3, 0.2])  # th
         q_hand = np.concatenate((q_imr, q_imr, q_imr, q_th))
         q_curr = self.model.plant.GetPositions(self.model.plant_context)
         q_curr[-16:] = q_hand  # hand states come last
@@ -408,7 +408,7 @@ class HeuristicAlgrICSampler(HeuristicICSampler):
             contact_bodies[2].body_frame(),  # ring
             contact_bodies[3].body_frame(),  # thumb
         ]
-        th_t = np.pi / 4.0 + (np.pi / 24.0) * np.random.randn()  # tilt angle
+        th_t = np.pi / 3.0 + (np.pi / 24.0) * np.random.randn()  # tilt angle
         r_f = 0.012  # radius of fingertip
         contact_locs = [
             np.array([r_f * np.sin(th_t), 0.0, 0.0267 + r_f * np.cos(th_t)]),  # if
