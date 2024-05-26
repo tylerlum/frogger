@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 import nlopt
 import numpy as np
 
 from frogger.robots.robot_core import RobotModel
 from frogger.sampling import ICSampler
+import time
 
 
 @dataclass
@@ -148,18 +149,29 @@ class Frogger:
 
         return f, g, h
 
-    def generate_grasp(self) -> np.ndarray:
+    def generate_grasp(self, max_time: Optional[float] = None) -> np.ndarray:
         """Generates a grasp.
 
         Returns
         -------
         q_star : np.ndarray, shape=(n,)
             The optimized grasp configuration.
+        max_time : Optional[float], default=None
+            The maximum time to run the optimization for. If None, the optimization will
+            run until a feasible solution is found.
         """
         success = False
+        start_time = time.time()
         while not success:
+            if max_time is not None and time.time() - start_time > max_time:
+                import sys
+                print(f"Optimization timed out after {max_time} seconds.", file=sys.stderr)
+                return None
+
             # sample initial guess
-            q0, _ = self.sampler.sample_configuration()
+            q0, _ = self.sampler.sample_configuration(max_time=max_time)
+            if q0 is None:
+                return None
 
             # refine the grasp
             try:
