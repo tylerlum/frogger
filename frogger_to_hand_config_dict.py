@@ -114,7 +114,6 @@ def zup_mesh_to_q_array(mesh_object: MeshObject, num_grasps: int) -> np.ndarray:
         xtol_rel=1e-6,
         xtol_abs=1e-6,
         maxeval=1000,
-        maxtime=60.0,
     ).create()
 
     q_array = []
