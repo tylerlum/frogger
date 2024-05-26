@@ -272,6 +272,7 @@ class HeuristicICSampler(ICSampler):
         start_time = time.time()
         while not success:
             if max_time is not None and time.time() - start_time > max_time:
+                import sys
                 print(f"Failed to sample grasp within {max_time} seconds.", file=sys.stderr)
                 return None, None
 
