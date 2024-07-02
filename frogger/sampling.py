@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from typing import Optional, Tuple
 import numpy as np
 import time
 from typing import Optional
@@ -238,8 +239,8 @@ class HeuristicICSampler(ICSampler):
         """
 
     def sample_configuration(
-        self, tol_ang: float = 1e-2, tol_pos: float = 1e-4, seed: int | None = None, max_time: Optional[float] = None
-    ) -> tuple[np.ndarray, int]:
+        self, tol_ang: float = 1e-2, tol_pos: float = 1e-4, seed: Optional[int] = None, max_time: Optional[float] = None
+    ) -> Tuple[np.ndarray, int]:
         """Sample a grasp.
 
         Parameters
@@ -248,7 +249,7 @@ class HeuristicICSampler(ICSampler):
             The positive tolerance on the orientation of the palm in radians.
         tol_pos : float, default=0.0
             The (double-sided) tolerance on the position of the palm in meters.
-        seed : int | None, default=None
+        seed : Optional[int], default=None
             Random seed.
         max_time : Optional[float], default=None
             The maximum time to run the sampler.

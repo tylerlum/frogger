@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 import numpy as np
 from numba import jit
@@ -333,7 +333,7 @@ class RobotModel:
     # ########## #
 
     @property
-    def q_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+    def q_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
         """Bounds on the configuration from the description file.
 
         Returns
@@ -411,12 +411,12 @@ class RobotModel:
             fid = inspector.GetFrameId(gid)
             return self.plant.GetBodyFromFrameId(fid).body_frame()
 
-        self.g[
-            self.n_bounds : (self.n_bounds + self.n_pairs)
-        ] = -1.0  # setting "far" points to 1.0m
-        self.Dg[
-            self.n_bounds : (self.n_bounds + self.n_pairs), :
-        ] = 0.0  # resetting col gradients
+        self.g[self.n_bounds : (self.n_bounds + self.n_pairs)] = (
+            -1.0
+        )  # setting "far" points to 1.0m
+        self.Dg[self.n_bounds : (self.n_bounds + self.n_pairs), :] = (
+            0.0  # resetting col gradients
+        )
 
         # loop through unculled collision pairs
         self.hand_obj_cols = {}  # reset the hand-obj dictionary
@@ -886,13 +886,13 @@ class RobotModel:
         self.sliders.Run(self.diagram, None)
 
     def introspect_collisions(
-        self, q: np.ndarray | None = None, level: float = -1e-6
+        self, q: Optional[np.ndarray] = None, level: float = -1e-6
     ) -> None:
         """Introspects collisions for most recently processed configuration.
 
         Parameters
         ----------
-        q : np.ndarray | None, default=None
+        q : Optional[np.ndarray], default=None
             The configuration to introspect. If None, uses the most recent configuration.
         level : float, default=-1e-6
             The level of penetration to introspect. Any pair with signed distance less than
@@ -951,7 +951,7 @@ def default_coll_callback(model: RobotModel, name_A: str, name_B: str) -> float:
         return d_min  # other pairs must respect d_min
 
 
-@dataclass(kw_only=True)
+@dataclass
 class RobotModelConfig:
     """A configuration for a robot model.
 
@@ -977,7 +977,7 @@ class RobotModelConfig:
         The object level set that the fingertips should lie on.
     ignore_mass_inertia: bool, default=True
         Whether to ignore the object mass/inertia and only rely on geoms for grasp planning.
-    name : str | None, default=None
+    name : Optional[str], default=None
         The name of the robot.
     viz : bool, default=True
         Whether to visualize the robot.
@@ -1008,8 +1008,8 @@ class RobotModelConfig:
     """
 
     # required
-    model_path: str | None = None
-    obj: ObjectDescription | None = None
+    model_path: Optional[str] = None
+    obj: Optional[ObjectDescription] = None
 
     # optional
     ns: int = 4
@@ -1020,18 +1020,18 @@ class RobotModelConfig:
     ignore_mass_inertia: bool = True
     n_couple: int = 0
     finger_level_set: float = 0.0
-    name: str | None = None
+    name: Optional[str] = None
     viz: bool = True
-    custom_compute_l: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
-    custom_compute_g: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
-    custom_compute_h: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
-    custom_coll_callback: Callable[[RobotModel, str, str], float] | None = None
+    custom_compute_l: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_compute_g: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_compute_h: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_coll_callback: Optional[Callable[[RobotModel, str, str], float]] = None
     n_g_extra: int = 1
     n_h_extra: int = 0
 

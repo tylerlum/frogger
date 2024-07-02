@@ -54,7 +54,7 @@ def combine_dataclasses(cls_a: type, cls_b: type) -> type:
     new_cls = make_dataclass(
         new_class_name,
         [(name, type_, default) for name, (type_, default) in attributes.items()],
-        kw_only=True,
+        # kw_only=True,
         bases=(cls_a, cls_b),
     )
 
@@ -66,7 +66,7 @@ def combine_dataclasses(cls_a: type, cls_b: type) -> type:
     return new_cls
 
 
-@dataclass(kw_only=True)
+@dataclass
 class BaselineConfig(RobotModelConfig):
     """Configuration for a generic baseline.
 

@@ -26,7 +26,7 @@ except ImportError:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-@dataclass(kw_only=True)
+@dataclass
 class NerfGraspingBaselineConfig(BaselineConfig):
     """Configuration for the NeRF grasping baseline."""
 

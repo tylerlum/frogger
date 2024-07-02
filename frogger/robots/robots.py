@@ -29,7 +29,7 @@ class FR3AlgrModel(RobotModel):
         super().__init__(cfg)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class FR3AlgrModelConfig(RobotModelConfig):
     """Configuration of the FR3Algr robot model.
 
@@ -98,7 +98,7 @@ class FR3AlgrZed2iModel(FR3AlgrModel):
         self.b_box = np.concatenate((b_box_lb, -b_box_ub))
 
 
-@dataclass(kw_only=True)
+@dataclass
 class FR3AlgrZed2iModelConfig(FR3AlgrModelConfig):
     """Configuration of the FR3AlgrZed2i robot model.
 
@@ -135,7 +135,7 @@ class AlgrModel(RobotModel):
         super().__init__(cfg)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class AlgrModelConfig(RobotModelConfig):
     """Configuration of the Algr robot model.
 
@@ -223,7 +223,7 @@ class BH280Model(RobotModel):
         self.A_couple = np.array(A_couple)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class BH280ModelConfig(RobotModelConfig):
     """Configuration of the Barrett Hand robot model.
 

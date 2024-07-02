@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import nlopt
 import numpy as np
@@ -47,6 +47,10 @@ class FroggerConfig:
     xtol_rel: float = 1e-6
     xtol_abs: float = 1e-6
     maxeval: int = 1000
+<<<<<<< Updated upstream
+=======
+    maxtime: Optional[float] = 60.0
+>>>>>>> Stashed changes
 
     def create(self) -> "Frogger":
         """Creates the solver."""
@@ -114,7 +118,7 @@ class Frogger:
         self.tol_fclosure = tol_fclosure
         self.tol_couple = tol_couple
 
-    def _make_fgh(self) -> tuple[Callable, Callable, Callable]:
+    def _make_fgh(self) -> Tuple[Callable, Callable, Callable]:
         """Returns f, g, and h suitable for use in NLOPT.
 
         We do not use the Drake NLOPT wrapper because of the overhead required to

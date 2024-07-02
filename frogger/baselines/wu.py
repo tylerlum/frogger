@@ -9,7 +9,7 @@ from frogger.baselines.base import BaselineConfig
 from frogger.robots.robot_core import RobotModel
 
 
-@dataclass(kw_only=True)
+@dataclass
 class WuBaselineConfig(BaselineConfig):
     """Configuration for the Wu baseline solver.
 
