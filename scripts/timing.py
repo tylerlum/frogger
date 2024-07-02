@@ -1,14 +1,16 @@
 import time
 import warnings
+from concurrent.futures import TimeoutError
 
 import numpy as np
 import trimesh
 from pydrake.math import RigidTransform, RotationMatrix
 
 from frogger import ROOT
-from frogger.baselines import WuBaselineConfig
+from frogger.baselines.wu import WuBaselineConfig
 from frogger.metrics import ferrari_canny_L1, min_weight_metric
 from frogger.objects import MeshObject, MeshObjectConfig
+from frogger.robots.robot_core import RobotModel
 from frogger.robots.robots import (
     AlgrModelConfig,
     BH280ModelConfig,
@@ -21,6 +23,7 @@ from frogger.sampling import (
     HeuristicFR3AlgrICSampler,
 )
 from frogger.solvers import Frogger, FroggerConfig
+from frogger.utils import timeout
 
 # [Feb. 22, 2024] suppress annoying torch warning about LUSolve from qpth
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -87,6 +90,7 @@ obj_names = [
 
 tot_setup_time = 0.0
 tot_gen_time = 0.0
+TIMEOUT_PERIOD_SEC = 60.0  # [EDIT THIS] the number of seconds to wait before timing out
 NUM_SAMPLES = 1  # [EDIT THIS] number of grasps to sample per object
 EVAL = True  # [EDIT THIS] whether to eval the grasps on min-weight/Ferrari-Canny
 VIZ = False  # [EDIT THIS] whether to visualize the results every grasp
@@ -123,8 +127,63 @@ for pair in model_sampler_pairs:
             X_WO=X_WO,
             mesh=mesh,
             name=obj_name,
+            enforce_watertight=True,  # you can turn off the check for watertightness
             clean=False,
         ).create()
+
+        # example showing how to use the custom collision callback
+        if "Allegro" in model_name:
+
+            def _custom_coll_callback(
+                model: RobotModel, name_A: str, name_B: str
+            ) -> float:
+                """A custom collision callback.
+
+                Given two collision geom names, indicates what the lower bound on separation
+                should be between them in meters.
+
+                WARNING: for now, if you overwrite this, you MUST ensure manually that the fingertips
+                are allowed some penetration with the object!
+                """
+                # organizing names
+                has_tip = (
+                    "FROGGERCOL" in name_A or "FROGGERCOL" in name_B
+                )  # MUST MANUALLY DO THIS!
+                has_palm = "palm" in name_A or "palm" in name_B
+                has_ds = (
+                    "ds_collision" in name_A or "ds_collision" in name_B
+                )  # non-tip distal geoms
+                has_md = "md" in name_A or "md" in name_B  # medial geoms
+                has_px = "px" in name_A or "px" in name_B  # proximal geoms
+                has_bs = "bs" in name_A or "bs" in name_B  # base geoms
+                has_mp = (
+                    "mp" in name_A or "mp" in name_B
+                )  # metacarpal geoms, thumb only
+                has_obj = "obj" in name_A or "obj" in name_B
+
+                # provide custom bounds on different geom pairs
+                if has_tip and has_obj:
+                    # allow tips to penetrate object - MUST MANUALLY DO THIS!
+                    return -model.d_pen
+                elif has_palm and has_obj:
+                    return 0.01  # ensure at least 1cm separation
+                elif has_ds and has_obj:
+                    return 0.002  # ensure at least 2mm separation
+                elif has_md and has_obj:  # noqa: SIM114
+                    return 0.005  # ensure at least 5mm separation
+                elif has_px and has_obj:  # noqa: SIM114
+                    return 0.005  # ensure at least 5mm separation
+                elif has_bs and has_obj:  # noqa: SIM114
+                    return 0.01  # ensure at least 1cm separation
+                elif has_mp and has_obj:  # noqa: SIM114
+                    return 0.01  # ensure at least 1cm separation
+                else:
+                    return model.d_min  # default case: use d_min
+
+            custom_coll_callback = _custom_coll_callback
+        else:
+            custom_coll_callback = None
+        custom_coll_callback = None
 
         # loading model and sampler
         model = ModelConfig(
@@ -134,7 +193,9 @@ for pair in model_sampler_pairs:
             d_min=0.001,
             d_pen=0.005,
             l_bar_cutoff=0.3,
+            ignore_mass_inertia=True,  # don't use obj mass/inertia at all
             viz=VIZ,
+            custom_coll_callback=custom_coll_callback,
         ).create()
         sampler = Sampler(
             model,
@@ -152,7 +213,6 @@ for pair in model_sampler_pairs:
             xtol_rel=1e-6,
             xtol_abs=1e-6,
             maxeval=1000,
-            maxtime=60.0,
         ).create()
         end = time.time()
         print(f"    setup time: {end - start}")
@@ -162,7 +222,15 @@ for pair in model_sampler_pairs:
         sub_time = 0.0
         for _ in range(NUM_SAMPLES):
             start = time.time()
-            q_star = frogger.generate_grasp()  # only time generation
+            try:
+                q_star = timeout(TIMEOUT_PERIOD_SEC)(
+                    frogger.generate_grasp
+                )()  # only time generation
+            except TimeoutError:
+                print(
+                    f"        Grasp generation timed out after {TIMEOUT_PERIOD_SEC} seconds!"
+                )
+                continue
             end = time.time()
             sub_time += end - start
 

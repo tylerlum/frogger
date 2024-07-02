@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional, Tuple
 
 import nlopt
 import numpy as np
 
 from frogger.robots.robot_core import RobotModel
 from frogger.sampling import ICSampler
+import time
 
 
 @dataclass
@@ -34,8 +35,6 @@ class FroggerConfig:
         Absolute tolerance for the optimization in nlopt.
     maxeval : int, default=1000
         Maximum number of evaluations for the optimization in nlopt.
-    maxtime : float, default=60.0
-        Maximum time for the optimization in nlopt.
     """
 
     model: RobotModel
@@ -48,7 +47,10 @@ class FroggerConfig:
     xtol_rel: float = 1e-6
     xtol_abs: float = 1e-6
     maxeval: int = 1000
-    maxtime: float | None = 60.0
+<<<<<<< Updated upstream
+=======
+    maxtime: Optional[float] = 60.0
+>>>>>>> Stashed changes
 
     def create(self) -> "Frogger":
         """Creates the solver."""
@@ -74,7 +76,6 @@ class Frogger:
         xtol_rel = cfg.xtol_rel
         xtol_abs = cfg.xtol_abs
         maxeval = cfg.maxeval
-        maxtime = cfg.maxtime
 
         # constraint setup
         # TODO(ahl): expose tolerances for extra constraints
@@ -104,8 +105,6 @@ class Frogger:
         opt.set_min_objective(f)
         opt.add_inequality_mconstraint(g, tol_ineq)
         opt.add_equality_mconstraint(h, tol_eq)
-        if maxtime is not None:
-            opt.set_maxtime(maxtime)
 
         # setting attributes
         self.opt = opt
@@ -119,7 +118,7 @@ class Frogger:
         self.tol_fclosure = tol_fclosure
         self.tol_couple = tol_couple
 
-    def _make_fgh(self) -> tuple[Callable, Callable, Callable]:
+    def _make_fgh(self) -> Tuple[Callable, Callable, Callable]:
         """Returns f, g, and h suitable for use in NLOPT.
 
         We do not use the Drake NLOPT wrapper because of the overhead required to
@@ -154,18 +153,29 @@ class Frogger:
 
         return f, g, h
 
-    def generate_grasp(self) -> np.ndarray:
+    def generate_grasp(self, max_time: Optional[float] = None) -> np.ndarray:
         """Generates a grasp.
 
         Returns
         -------
         q_star : np.ndarray, shape=(n,)
             The optimized grasp configuration.
+        max_time : Optional[float], default=None
+            The maximum time to run the optimization for. If None, the optimization will
+            run until a feasible solution is found.
         """
         success = False
+        start_time = time.time()
         while not success:
+            if max_time is not None and time.time() - start_time > max_time:
+                import sys
+                print(f"Optimization timed out after {max_time} seconds.", file=sys.stderr)
+                return None
+
             # sample initial guess
-            q0, _ = self.sampler.sample_configuration()
+            q0, _ = self.sampler.sample_configuration(max_time=max_time)
+            if q0 is None:
+                return None
 
             # refine the grasp
             try:

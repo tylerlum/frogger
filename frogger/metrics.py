@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
 from numba import jit
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 def _ferrari_canny_L1(
     G: np.ndarray,
     mu: float,
-    c: np.ndarray | None = None,
+    c: Optional[np.ndarray] = None,
     ns: int = 4,
     nc: int = 4,
     lamb: float = 1.0,
@@ -33,7 +33,7 @@ def _ferrari_canny_L1(
         Grasp matrix. nb=3 for hard contact, nb=4 for soft contact.
     mu : float
         Coefficient of friction.
-    c : np.ndarray | None, default=None
+    c : Optional[np.ndarray], default=None
         The center about which to check the ball radius. If None, defaults to 0.
     ns : int, default=4
         Number of sides of pyramidal friction cone approximation.
@@ -81,7 +81,7 @@ def _ferrari_canny_L1(
 
 
 @jit(nopython=True, fastmath=True, cache=True)
-def min_weight_lp(W: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def min_weight_lp(W: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Given basis wrenches, solves the min-weight LP.
 
     Parameters
@@ -190,7 +190,7 @@ def min_weight_gradient(
 # ########### #
 
 
-def min_weight_metric(robot: "RobotModel", q: np.ndarray | None = None) -> float:
+def min_weight_metric(robot: "RobotModel", q: Optional[np.ndarray] = None) -> float:
     """Convenience function for computing the min-weight metric.
 
     Assumes that the basis wrenches have already been computed and cached.
@@ -199,7 +199,7 @@ def min_weight_metric(robot: "RobotModel", q: np.ndarray | None = None) -> float
     ----------
     robot : RobotModel
         The robot model.
-    q : np.ndarray | None, default=None
+    q : Optional[np.ndarray], default=None
         The configuration at which to evaluate the metric. If None, defaults to the
         current configuration of the robot.
     """
@@ -209,7 +209,7 @@ def min_weight_metric(robot: "RobotModel", q: np.ndarray | None = None) -> float
     return x_opt[-1]
 
 
-def ferrari_canny_L1(robot: "RobotModel", q: np.ndarray | None = None) -> float:
+def ferrari_canny_L1(robot: "RobotModel", q: Optional[np.ndarray] = None) -> float:
     """Convenience function for computing the Ferrari-Canny L1 metric.
 
     Assumes that the grasp matrix has already been computed and cached.
@@ -218,7 +218,7 @@ def ferrari_canny_L1(robot: "RobotModel", q: np.ndarray | None = None) -> float:
     ----------
     robot : RobotModel
         The robot model.
-    q : np.ndarray | None, default=None
+    q : Optional[np.ndarray], default=None
         The configuration at which to evaluate the metric. If None, defaults to the
         current configuration of the robot.
     """

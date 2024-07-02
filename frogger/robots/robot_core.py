@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 import numpy as np
 from numba import jit
 from pydrake.geometry import (
     AddContactMaterial,
     AddRigidHydroelasticProperties,
+    CollisionFilterDeclaration,
+    GeometrySet,
     MeshcatVisualizer,
     MeshcatVisualizerParams,
     ProximityProperties,
@@ -67,12 +69,15 @@ class RobotModel:
         self.d_min = cfg.d_min
         self.d_pen = cfg.d_pen
         self.l_bar_cutoff = cfg.l_bar_cutoff
+        self.ignore_mass_inertia = cfg.ignore_mass_inertia
         self.viz = cfg.viz
         self.custom_compute_l = (
             cfg.__class__.custom_compute_l
         )  # these will be class functions
         self.custom_compute_g = cfg.__class__.custom_compute_g
         self.custom_compute_h = cfg.__class__.custom_compute_h
+        self.finger_level_set = cfg.finger_level_set
+        self.coll_callback = cfg.custom_coll_callback
         self.n_g_extra = cfg.n_g_extra
         self.n_h_extra = cfg.n_h_extra
         self.cfg = cfg
@@ -153,6 +158,26 @@ class RobotModel:
                 if robot_body not in _robot_collision_bodies:
                     _robot_collision_bodies.append(robot_body)
 
+        # [FORK ONLY] collision filtering the table with the object
+        ##############################################################################
+        cfm = self.scene_graph.collision_filter_manager(self.sg_context)
+        inspector = self.query_object.inspector()
+        self.obj_geoms = []
+        tabletop_geom = None
+
+        for g in inspector.GetAllGeometryIds():
+            name = inspector.GetName(g)
+            if "obj" in name and "visual" not in name:
+                self.obj_geoms.append(g)
+
+            elif "tabletop_collision" in name:
+                tabletop_geom = g
+
+        tabletop_set = GeometrySet(tabletop_geom)
+        obj_set = GeometrySet(self.obj_geoms)
+        cfm.Apply(CollisionFilterDeclaration().ExcludeBetween(tabletop_set, obj_set))
+        ##############################################################################
+
         # internal dimensions
         self.nc = len(_robot_collision_bodies)  # number of contact points
         self.n = self.plant.num_positions() - 7  # exclude the object pose states
@@ -172,6 +197,8 @@ class RobotModel:
         )
         self.n_O = None
         self.n_W = None
+        self.R_O_cf = None  # contact frames of each finger expressed in obj frame
+        self.DR_O_cf = None
         self.Ds_p = None  # cached value of Ds evaluated at fingertips
         self.h = None  # cached values of the eq constraint function and Jacobian
         self.Dh = None
@@ -208,16 +235,22 @@ class RobotModel:
         # registering object's visual/collision geoms with the plant
         assert None not in [self.obj.shape_visual, self.obj.shape_collision_list]
         self.obj_instance = self.plant.AddModelInstance("obj")
-        I_o = self.obj.inertia / self.obj.mass
+        if self.ignore_mass_inertia:
+            inertia = UnitInertia(1, 1, 1, 0, 0, 0)
+            mass = 1.0
+        else:
+            I_o = self.obj.inertia / self.obj.mass
+            inertia = UnitInertia(
+                I_o[0, 0], I_o[1, 1], I_o[2, 2], I_o[0, 1], I_o[0, 2], I_o[1, 2]
+            )
+            mass = self.obj.mass
         self.obj_body = self.plant.AddRigidBody(
             "obj",
             self.obj_instance,
             SpatialInertia(
-                self.obj.mass,
+                mass,
                 np.zeros(3),
-                UnitInertia(
-                    I_o[0, 0], I_o[1, 1], I_o[2, 2], I_o[0, 1], I_o[0, 2], I_o[1, 2]
-                ),
+                inertia,
             ),
         )
 
@@ -300,7 +333,7 @@ class RobotModel:
     # ########## #
 
     @property
-    def q_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+    def q_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
         """Bounds on the configuration from the description file.
 
         Returns
@@ -333,12 +366,13 @@ class RobotModel:
         """Sets the robot state."""
         assert len(q) == self.n
         self.plant.SetPositions(self.plant_context, self.robot_instance, q)
+        self.q = np.copy(q)
 
     # ######################## #
     # CACHED VALUE COMPUTATION #
     # ######################## #
 
-    def _process_collisions(self, q: np.ndarray) -> None:
+    def _process_collisions(self) -> None:
         """Computes all information related to collision constraints."""
         # we initialize the inequality constraints here to allow derived RobotModels
         # to modify the collision geometries during initialization
@@ -346,7 +380,7 @@ class RobotModel:
             self._init_ineq_cons()
 
         # update joint limit constraint values
-        self.g[: self.n_bounds] = self.A_box @ q + self.b_box
+        self.g[: self.n_bounds] = self.A_box @ self.q + self.b_box
 
         # collisions get computed conditionally after culling w/max_distance.
         # everything sufficiently far away we ignore and set the gradient to 0
@@ -377,12 +411,12 @@ class RobotModel:
             fid = inspector.GetFrameId(gid)
             return self.plant.GetBodyFromFrameId(fid).body_frame()
 
-        self.g[
-            self.n_bounds : (self.n_bounds + self.n_pairs)
-        ] = -1.0  # setting "far" points to 1.0m
-        self.Dg[
-            self.n_bounds : (self.n_bounds + self.n_pairs), :
-        ] = 0.0  # resetting col gradients
+        self.g[self.n_bounds : (self.n_bounds + self.n_pairs)] = (
+            -1.0
+        )  # setting "far" points to 1.0m
+        self.Dg[self.n_bounds : (self.n_bounds + self.n_pairs), :] = (
+            0.0  # resetting col gradients
+        )
 
         # loop through unculled collision pairs
         self.hand_obj_cols = {}  # reset the hand-obj dictionary
@@ -431,17 +465,15 @@ class RobotModel:
 
             # only allow tip/obj collision w/ small penetration
             names = [inspector.GetName(id_A), inspector.GetName(id_B)]
-            has_tip = "FROGGERCOL" in names[0] or "FROGGERCOL" in names[1]
-            has_obj = "obj_collision" in names[0] or "obj_collision" in names[1]
-            d_pen = self.d_pen
-            if has_tip and has_obj:
-                self.g[self.n_bounds + i] = -sd - d_pen  # allow tips to penetrate obj
-            else:
-                self.g[self.n_bounds + i] = d_min - sd  # other pairs must respect d_min
+            self.g[self.n_bounds + i] = -sd + self.coll_callback(
+                self, names[0], names[1]
+            )
             Dgi = -(J_A - J_B).T @ nrml
             self.Dg[self.n_bounds + i, :] = Dgi
 
             # updating the most interpenetrating pairs for each link allowing collision
+            has_tip = "FROGGERCOL" in names[0] or "FROGGERCOL" in names[1]
+            has_obj = "obj_collision" in names[0] or "obj_collision" in names[1]
             if has_tip and has_obj:
                 bA, bB = fA.body(), fB.body()  # bodies associated with collision geoms
                 body_name_A, body_name_B = bA.name(), bB.name()
@@ -476,7 +508,9 @@ class RobotModel:
         p_tips = []
         J_tips = []
         for _, v in sorted(self.hand_obj_cols.items()):
-            h.append(v[0])
+            h.append(
+                v[0] - self.finger_level_set
+            )  # enforce that the tips lie on a level set
             Dh.append(v[1])
             p_tips.append(v[2])
             J_tips.append(
@@ -505,7 +539,10 @@ class RobotModel:
 
         else:
             g_extra, Dg_extra = self.custom_compute_g(self)
-            assert len(g_extra) == self.n_g_extra
+            if isinstance(g_extra, float):
+                assert self.n_g_extra == 1
+            elif isinstance(g_extra, np.ndarray):
+                assert len(g_extra) == self.n_g_extra
             self.g[-self.n_g_extra :] = g_extra
             self.Dg[-self.n_g_extra :, :] = Dg_extra
 
@@ -534,7 +571,7 @@ class RobotModel:
 
         Ds_O_ps = self.obj.Ds_O(self.P_OF.T, batched=True)
         D2s_O_ps = self.obj.D2s_O(self.P_OF.T, batched=True)
-        self.DG, self.DW = self._DG_DW_helper(
+        self.DG, self.DW, self.R_O_cf, self.DR_O_cf = self._DG_DW_helper(
             J_T, Ds_O_ps, D2s_O_ps, self.P_OF, self.n_O, R_OW, self.F
         )
 
@@ -579,6 +616,10 @@ class RobotModel:
         summing_matrix = np.kron(np.eye(nc), np.ones((1, 3)))
         gs_inners = summing_matrix @ (np.ascontiguousarray(Ds_O_ps).reshape(-1) ** 2)
 
+        # caching the contact frames and their Jacobians wrt q
+        R_O_cf = np.zeros((nc, 3, 3))
+        DR_O_cf = np.zeros((nc, 3, 3, n))
+
         for i in range(nc):
             p = P_OF.T[i, :]  # P_OF.T has shape (nc, 3), select ith row
             nrml = n_O.T[i, :]  # n_O.T has shape (nc, 3), select ith row
@@ -589,9 +630,10 @@ class RobotModel:
             zz = z @ z
             tx = z / np.sqrt(zz)
             ty = np.cross(nrml, tx)
-            R = np.stack((tx, ty, nrml)).T
+            R = np.stack((tx, ty, nrml)).T  # contact frame in object frame
+            R_O_cf[i, ...] = R
 
-            # compute DR_p, Jacobian of rotation matrix wrt p
+            # compute DR_p, Jacobian of rotation matrix wrt p in object frame
             gs = Ds_O_ps[i]  # compute this in the object frame
             gsgs = gs_inners[i]
             factor1 = (np.eye(3) - np.outer(gs, gs) / gsgs) / np.sqrt(gsgs)
@@ -607,6 +649,10 @@ class RobotModel:
             Dty_p = Dty_n @ Dn_p
 
             DR_p = np.stack((Dtx_p, Dty_p, Dn_p), axis=1)  # (3, 3, 3)
+
+            # computing the Jacobian of R wrt q - useful for nerf grasping
+            DR = (DR_p.reshape((9, -1)) @ R_OW_J).reshape((3, 3, n))  # (3, 3, n)
+            DR_O_cf[i, ...] = DR
 
             # compute DphatR_p, Jacobian of skew(p) @ R
             # note that here p is in the object frame, so later, when we try to
@@ -633,7 +679,8 @@ class RobotModel:
 
             DG[:, (3 * i) : (3 * (i + 1)), :] = DG_i
             DW[:, (ns * i) : (ns * (i + 1)), :] = DW_i
-        return DG, DW
+
+        return DG, DW, R_O_cf, DR_O_cf
 
     def _compute_l(self) -> None:
         """Computes the min-weight metric and its gradient."""
@@ -649,11 +696,11 @@ class RobotModel:
         self.f = -self.l
         self.Df = -self.Dl
 
-    def _compute_eq_cons(self, q: np.ndarray) -> None:
+    def _compute_eq_cons(self) -> None:
         """Computes the equality constraints."""
         # computing coupling and contact constraints
         if self.n_couple != 0:
-            h_couple = self.A_couple @ q + self.b_couple
+            h_couple = self.A_couple @ self.q + self.b_couple
             Dh_couple = self.A_couple
             self.h[: self.n_couple + self.nc] = np.concatenate((self.h_tip, h_couple))
             self.Dh[: self.n_couple + self.nc, :] = np.concatenate(
@@ -681,18 +728,18 @@ class RobotModel:
         # updating plant context
         n = self.n
         assert q.shape == (n,)
-        self.set_q(q)
+        self.set_q(q)  # also caches self.q
 
         # computing all cached values
         if self.h is None:
             self._init_eq_cons()
-        self._process_collisions(q)
+        self._process_collisions()
         self._compute_G_and_W()
         self._compute_DG_and_DW()
         self._compute_l()
         self._compute_cost_func()
         self._finish_ineq_cons()
-        self._compute_eq_cons(q)
+        self._compute_eq_cons()
 
     # ###################### #
     # CACHED VALUE RETRIEVAL #
@@ -702,56 +749,60 @@ class RobotModel:
         """Computes the forward kinematics, p_tips."""
         if self.p_tips is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.p_tips  # (nc, 3)
 
     def compute_J_tips(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobians of the fingertips, J_tips."""
         if self.J_tips is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.J_tips  # (nc, 3, n)
 
     def compute_n_O(self, q: np.ndarray) -> np.ndarray:
         """Computes the invward contact normals in the object frame, n_O."""
         if self.n_O is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.n_O.T  # (nc, 3)
 
     def compute_n_W(self, q: np.ndarray) -> np.ndarray:
         """Computes the inward contact normals in the world frame, n_W."""
         if self.n_W is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.n_W.T  # (nc, 3)
+
+    def compute_R_O_cf(self, q: np.ndarray) -> np.ndarray:
+        """Computes the contact frames of each finger expressed in the object frame."""
+        if self.R_O_cf is None or np.any(q != self.q):
+            self.compute_all(q)
+        return self.R_O_cf
+
+    def compute_DR_O_cf(self, q: np.ndarray) -> np.ndarray:
+        """Computes the Jacobian of the contact frames in the object frame."""
+        if self.DR_O_cf is None or np.any(q != self.q):
+            self.compute_all(q)
+        return self.DR_O_cf
 
     def compute_g(self, q: np.ndarray) -> np.ndarray:
         """Computes the inequality constraints g."""
         if self.g is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.g  # (n_ineq_cons,)
 
     def compute_Dg(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobian of the inequality constraints, Dg."""
         if self.Dg is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.Dg  # (n_ineq_cons, n)
 
     def compute_h(self, q: np.ndarray) -> np.ndarray:
         """Computes the equality constraints h."""
         if self.h is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.h  # (n_eq_cons,)
 
     def compute_Dh(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobian of the equality constraints, Dh."""
         if self.Dh is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.Dh  # (n_eq_cons, n)
 
     def compute_Ds(self, q: np.ndarray) -> np.ndarray:
@@ -761,70 +812,60 @@ class RobotModel:
         """
         if self.Ds_p is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.Ds_p  # (nc, 3)
 
     def compute_gOCs(self, q: np.ndarray) -> np.ndarray:
         """Computes the transformations from contacts to object frames."""
         if self.gOCs is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.gOCs  # (nc, 4, 4)
 
     def compute_G(self, q: np.ndarray) -> np.ndarray:
         """Computes the grasp map, G."""
         if self.G is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.G  # (6, 3 * nc)
 
     def compute_DG(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobian of the grasp map, DG."""
         if self.DG is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.DG  # (6, 3 * nc, n)
 
     def compute_W(self, q: np.ndarray) -> np.ndarray:
         """Computes the wrench matrix whose columns are the primitive wrenches, W."""
         if self.W is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.W  # (6, ns * nc)
 
     def compute_DW(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobian of the wrench matrix, Dw."""
         if self.DW is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.DW  # (6, ns * nc, n)
 
     def compute_l(self, q: np.ndarray) -> float:
-        """Computes the optimal minimum convex weight l."""
+        """Computes the optimal minimum convex weight l (or other metric value)."""
         if self.l is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.l
 
     def compute_Dl(self, q: np.ndarray) -> np.ndarray:
         """Computes the Jacobian of l, Dl."""
         if self.Dl is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.Dl  # (n,)
 
     def compute_f(self, q: np.ndarray) -> float:
-        """Computes the cost function f."""
+        """Computes the cost function f. Negative of the metric l."""
         if self.f is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.f
 
     def compute_Df(self, q: np.ndarray) -> np.ndarray:
         """Computes the gradient of the cost, Df."""
         if self.Df is None or np.any(q != self.q):
             self.compute_all(q)
-            self.q = np.copy(q)
         return self.Df  # (n,)
 
     # ##### #
@@ -845,13 +886,13 @@ class RobotModel:
         self.sliders.Run(self.diagram, None)
 
     def introspect_collisions(
-        self, q: np.ndarray | None = None, level: float = -1e-6
+        self, q: Optional[np.ndarray] = None, level: float = -1e-6
     ) -> None:
         """Introspects collisions for most recently processed configuration.
 
         Parameters
         ----------
-        q : np.ndarray | None, default=None
+        q : Optional[np.ndarray], default=None
             The configuration to introspect. If None, uses the most recent configuration.
         level : float, default=-1e-6
             The level of penetration to introspect. Any pair with signed distance less than
@@ -876,7 +917,41 @@ class RobotModel:
                 print(names)
 
 
-@dataclass(kw_only=True)
+def default_coll_callback(model: RobotModel, name_A: str, name_B: str) -> float:
+    """Default collision callback that returns the constraint violation expression.
+
+    WARNING: for now, if you overwrite this, you MUST ensure manually that the fingertips
+    are allowed some penetration with the object!
+
+    Parameters
+    ----------
+    model : RobotModel
+        The robot model.
+    name_A : str
+        The name of the first collision geometry.
+    name_B : str
+        The name of the second collision geometry.
+
+    Returns
+    -------
+    float
+        The constraint violation expression. In particular, safe distance constraints for
+        a pair of geoms are expressed as g(sd, name_A, name_B) = -sd + margin <= 0. This
+        function returns the value of the margin. POSITIVE margins are distances that the
+        geoms must be separated by. NEGATIVE margins indicate allowable penetrations.
+    """
+    # by default we allow penetration between special geoms marked with FROGGERCOL and obj
+    has_tip = "FROGGERCOL" in name_A or "FROGGERCOL" in name_B
+    has_obj = "obj_collision" in name_A or "obj_collision" in name_B
+    d_pen = model.d_pen  # allowable penetration distance
+    d_min = model.d_min  # default minimum distance
+    if has_tip and has_obj:
+        return -d_pen  # allow tips to penetrate obj
+    else:
+        return d_min  # other pairs must respect d_min
+
+
+@dataclass
 class RobotModelConfig:
     """A configuration for a robot model.
 
@@ -896,7 +971,13 @@ class RobotModelConfig:
         The allowable penetration between the fingertips and the object.
     l_bar_cutoff : float, default=1e-6
         The minimum allowable value of l_bar.
-    name : str | None, default=None
+    n_couple : int, default=0
+        The number of coupling constraints.
+    finger_level_set : float, default=0.0
+        The object level set that the fingertips should lie on.
+    ignore_mass_inertia: bool, default=True
+        Whether to ignore the object mass/inertia and only rely on geoms for grasp planning.
+    name : Optional[str], default=None
         The name of the robot.
     viz : bool, default=True
         Whether to visualize the robot.
@@ -907,6 +988,9 @@ class RobotModelConfig:
         A custom inequality constraint function that returns extra inequality constraints.
     custom_compute_h : Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]] | None
         A custom equality constraint function that returns extra equality constraints.
+    custom_coll_callback : Callable[[RobotModel, str, str], float]
+        A custom collision callback that takes in the robot, and the names of two collision
+        geometries and returns the lower bound on allowable separation between geoms.
     n_g_extra : int, default=1
         The number of "extra" inequality constraints. Extra is defined as anything that is
         not a box constraint or a collision constraint.
@@ -924,8 +1008,8 @@ class RobotModelConfig:
     """
 
     # required
-    model_path: str | None = None
-    obj: ObjectDescription | None = None
+    model_path: Optional[str] = None
+    obj: Optional[ObjectDescription] = None
 
     # optional
     ns: int = 4
@@ -933,18 +1017,21 @@ class RobotModelConfig:
     d_min: float = 0.001
     d_pen: float = 0.001
     l_bar_cutoff: float = 1e-6
+    ignore_mass_inertia: bool = True
     n_couple: int = 0
-    name: str | None = None
+    finger_level_set: float = 0.0
+    name: Optional[str] = None
     viz: bool = True
-    custom_compute_l: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
-    custom_compute_g: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
-    custom_compute_h: Callable[
-        [RobotModel], Tuple[np.ndarray, np.ndarray]
-    ] | None = None
+    custom_compute_l: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_compute_g: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_compute_h: Optional[
+        Callable[[RobotModel], Tuple[np.ndarray, np.ndarray]]
+    ] = None
+    custom_coll_callback: Optional[Callable[[RobotModel, str, str], float]] = None
     n_g_extra: int = 1
     n_h_extra: int = 0
 
@@ -963,6 +1050,10 @@ class RobotModelConfig:
         # handling default values manually, since derived classes have different ones
         if self.name is None:
             self.name = "robot"
+
+        # assigning default collision callback
+        if self.custom_coll_callback is None:
+            self.custom_coll_callback = default_coll_callback
 
     def create_pre_warmstart(self, model: RobotModel) -> None:
         """Entrypoint into the create() function before the warm start."""

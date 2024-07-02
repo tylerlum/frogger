@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -23,7 +23,7 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_debug_nans", True)  # errors out when encountering nans
 
 
-@dataclass(kw_only=True)
+@dataclass
 class ObjectDescriptionConfig:
     """A configuration for an object description.
 
@@ -31,23 +31,26 @@ class ObjectDescriptionConfig:
     ----------
     X_WO : RigidTransform
         The pose of the object with respect to the world frame.
-    lb_O : np.ndarray | None, shape=(3,), default=None
+    lb_O : Optional[np.ndarray], shape=(3,), default=None
         Lower bounds of the object in the object frame. Defaults to None.
-    ub_O : np.ndarray | None, shape=(3,), default=None
+    ub_O : Optional[np.ndarray], shape=(3,), default=None
         Upper bounds of the object in the object frame. Defaults to None.
-    mass : float | None, default=None
+    mass : Optional[float], default=None
         A known mass of the object.
+    enforce_watertight : bool, default=False
+        Whether to enforce checks on whether the mesh is watertight.
     name : str, default="abstract"
         The name of the object.
     """
 
     X_WO: RigidTransform
-    lb_O: np.ndarray | None = None
-    ub_O: np.ndarray | None = None
-    mass: float | None = None
+    lb_O: Optional[np.ndarray] = None
+    ub_O: Optional[np.ndarray] = None
+    mass: Optional[float] = None
+    enforce_watertight: bool = False
 
     # fields with overridden defaults in child classes
-    name: str | None = None
+    name: Optional[str] = None
 
     def __post_init__(self):
         """Used to handle overridden defaults."""
@@ -72,6 +75,7 @@ class ObjectDescription(ABC):
         self.ub_O = cfg.ub_O
         self.mass = cfg.mass
         self.name = cfg.name
+        self.enforce_watertight = cfg.enforce_watertight
 
         # mesh objects compute the SDF and its gradients differently
         if not isinstance(self, MeshObject):
@@ -392,7 +396,8 @@ class ObjectDescription(ABC):
         self.mesh_scale = np.mean(_mesh_viz.edges_unique_length)
 
         # if the meshes aren't watertight, then mesh pre-processing should be fixed
-        assert _mesh_viz.is_watertight
+        if self.enforce_watertight:
+            assert _mesh_viz.is_watertight
         pth = "/tmp/mesh_viz.obj"  # export the visual mesh
         _mesh_viz.export(pth)
         mesh_viz = Mesh(pth)
@@ -461,7 +466,7 @@ class ObjectDescription(ABC):
         self.ub_oriented = extents / 2.0
 
 
-@dataclass(kw_only=True)
+@dataclass
 class MeshObjectConfig(ObjectDescriptionConfig):
     """A configuration class for MeshObjects.
 
@@ -469,7 +474,7 @@ class MeshObjectConfig(ObjectDescriptionConfig):
     ----------
     mesh : trimesh.Trimesh
         The mesh object. Must be watertight.
-    name : str | None, default="mesh"
+    name : Optional[str], default="mesh"
         The name of the object.
     clean : bool, default=False
         Whether to clean the input mesh.

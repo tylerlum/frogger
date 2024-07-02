@@ -28,26 +28,8 @@ class FR3AlgrModel(RobotModel):
         self.hand = cfg.hand
         super().__init__(cfg)
 
-        # collision filtering the table with the object
-        cfm = self.scene_graph.collision_filter_manager(self.sg_context)
-        inspector = self.query_object.inspector()
-        self.obj_geoms = []
-        tabletop_geom = None
 
-        for g in inspector.GetAllGeometryIds():
-            name = inspector.GetName(g)
-            if "obj" in name and "visual" not in name:
-                self.obj_geoms.append(g)
-
-            elif "tabletop_collision" in name:
-                tabletop_geom = g
-
-        tabletop_set = GeometrySet(tabletop_geom)
-        obj_set = GeometrySet(self.obj_geoms)
-        cfm.Apply(CollisionFilterDeclaration().ExcludeBetween(tabletop_set, obj_set))
-
-
-@dataclass(kw_only=True)
+@dataclass
 class FR3AlgrModelConfig(RobotModelConfig):
     """Configuration of the FR3Algr robot model.
 
@@ -116,7 +98,7 @@ class FR3AlgrZed2iModel(FR3AlgrModel):
         self.b_box = np.concatenate((b_box_lb, -b_box_ub))
 
 
-@dataclass(kw_only=True)
+@dataclass
 class FR3AlgrZed2iModelConfig(FR3AlgrModelConfig):
     """Configuration of the FR3AlgrZed2i robot model.
 
@@ -153,7 +135,7 @@ class AlgrModel(RobotModel):
         super().__init__(cfg)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class AlgrModelConfig(RobotModelConfig):
     """Configuration of the Algr robot model.
 
@@ -241,7 +223,7 @@ class BH280Model(RobotModel):
         self.A_couple = np.array(A_couple)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class BH280ModelConfig(RobotModelConfig):
     """Configuration of the Barrett Hand robot model.
 
