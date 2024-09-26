@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import time
+from typing import Optional
 from pydrake.math import RigidTransform, RotationMatrix
 from pydrake.multibody.inverse_kinematics import InverseKinematics
 from pydrake.multibody.tree import Frame
@@ -33,13 +35,15 @@ class ICSampler(ABC):
         self.model = model
 
     @abstractmethod
-    def sample_configuration(self) -> np.ndarray:
+    def sample_configuration(self, max_time: Optional[float] = None) -> np.ndarray:
         """Samples a grasp configuration q0.
 
         Returns
         -------
         q_star : np.ndarray, shape=(n,)
             The optimized grasp configuration.
+        max_time : Optional[float], default=None
+            The maximum time to run the sampler.
         """
 
 
@@ -234,7 +238,7 @@ class HeuristicICSampler(ICSampler):
         """
 
     def sample_configuration(
-        self, tol_ang: float = 1e-2, tol_pos: float = 1e-4, seed: int | None = None
+        self, tol_ang: float = 1e-2, tol_pos: float = 1e-4, seed: int | None = None, max_time: Optional[float] = None
     ) -> tuple[np.ndarray, int]:
         """Sample a grasp.
 
@@ -246,6 +250,8 @@ class HeuristicICSampler(ICSampler):
             The (double-sided) tolerance on the position of the palm in meters.
         seed : int | None, default=None
             Random seed.
+        max_time : Optional[float], default=None
+            The maximum time to run the sampler.
 
         Returns
         -------
@@ -263,7 +269,13 @@ class HeuristicICSampler(ICSampler):
         # repeatedly tries to solve an IK problem until a feasible sample is found
         success = False
         num_attempts = 0
+        start_time = time.time()
         while not success:
+            if max_time is not None and time.time() - start_time > max_time:
+                import sys
+                print(f"Failed to sample grasp within {max_time} seconds.", file=sys.stderr)
+                return None, None
+
             num_attempts += 1
 
             # sampling a desired palm pose
@@ -346,7 +358,7 @@ class HeuristicAlgrICSampler(HeuristicICSampler):
         """
         # set guess for hand
         q_imr = np.array([0.0, 0.5, 0.5, 0.5])  # if, mf, rf
-        q_th = np.array([1.2, 0.5, 0.5, 0.4])  # th
+        q_th = np.array([1.2, 0.3, 0.3, 0.2])  # th
         q_hand = np.concatenate((q_imr, q_imr, q_imr, q_th))
         q_curr = self.model.plant.GetPositions(self.model.plant_context)
         q_curr[-16:] = q_hand  # hand states come last
@@ -408,7 +420,7 @@ class HeuristicAlgrICSampler(HeuristicICSampler):
             contact_bodies[2].body_frame(),  # ring
             contact_bodies[3].body_frame(),  # thumb
         ]
-        th_t = np.pi / 4.0 + (np.pi / 24.0) * np.random.randn()  # tilt angle
+        th_t = np.pi / 3.0 + (np.pi / 24.0) * np.random.randn()  # tilt angle
         r_f = 0.012  # radius of fingertip
         contact_locs = [
             np.array([r_f * np.sin(th_t), 0.0, 0.0267 + r_f * np.cos(th_t)]),  # if
